@@ -1,0 +1,10 @@
+name: saturnfs
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - click
+  - requests
+  - marshmallow>=3.10.0,<4.0.0
+  - marshmallow-dataclass

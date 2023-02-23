@@ -1,0 +1,21 @@
+__pycache__/
+.pytest_cache
+.vscode/
+.idea/
+.vscode/
+
+# data files
+*.csv
+*.npy
+*.parquet
+*.pq
+*.sqlite
+*.sqlite.*
+*.xls
+*.xlsx
+
+# Secrets
+*.pem
+*.crt
+*.key
+*id_rsa
