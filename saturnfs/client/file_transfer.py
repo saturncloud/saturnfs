@@ -1,12 +1,13 @@
 from datetime import datetime
 import os
-from typing import List
+from typing import List, Tuple
 from xml.etree import ElementTree
 import requests
 
 from saturnfs import settings
 from saturnfs.api.object_storage import ObjectStorageAPI
-from saturnfs.errors import PathErrors, SaturnError
+from saturnfs.client.aws import AWSPresignedClient
+from saturnfs.errors import ExpiredSignature, PathErrors, SaturnError
 from saturnfs.schemas import (
     ObjectStorageCompletedCopy,
     ObjectStoragePresignedCopy,
@@ -22,7 +23,7 @@ from saturnfs.schemas import (
 class FileTransferClient:
     def __init__(self):
         self.api = ObjectStorageAPI()
-        self.aws_session = requests.Session()
+        self.aws = AWSPresignedClient()
 
     def copy(self, source_path: str, destination_path: str, recursive: bool = False):
         source_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
@@ -71,25 +72,42 @@ class FileTransferClient:
             part_size = size
 
         upload = self.api.Upload.start(remote, size, part_size)
-        self._presigned_upload(local_path, upload)
+        done = False
+        completed_parts: List[ObjectStorageCompletePart] = []
+        file_offset: int = 0
+        while not done:
+            parts, done = self._presigned_upload(local_path, upload, file_offset)
+            completed_parts.extend(parts)
+            if not done:
+                # Presigned URL(s) expired during upload
+                # TODO: May want to set rate limit/max retries
+                upload = self.api.Upload.resume(upload.object_storage_upload_id)
+                file_offset = sum(part.size for part in upload.parts[:len(completed_parts)])
+                upload.parts = upload.parts[len(completed_parts):]
 
-    def _presigned_upload(self, local_path: str, upload: ObjectStoragePresignedUpload):
+        self.api.Upload.complete(
+            upload.object_storage_upload_id, ObjectStorageCompletedUpload(parts=completed_parts)
+        )
+
+    def _presigned_upload(
+        self, local_path: str, upload: ObjectStoragePresignedUpload, file_offset: int = 0
+    ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         completed_parts: List[ObjectStorageCompletePart] = []
         with open(local_path, "r") as f:
+            f.seek(file_offset)
             for part in upload.parts:
                 chunk = f.read(part.size)
-                response = self.aws_session.put(part.url, chunk)
-                if not response.ok:
-                    raise SaturnError(response.text)
+                try:
+                    response = self.aws.put(part.url, chunk)
+                except ExpiredSignature:
+                    return completed_parts, False
 
                 etag = response.headers["ETag"]
                 completed_parts.append(
                     ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
                 )
 
-        self.api.Upload.complete(
-            upload.object_storage_upload_id, ObjectStorageCompletedUpload(parts=completed_parts)
-        )
+        return completed_parts, True
 
     def download_file(self, remote_path: str, local_path: str):
         remote = ObjectStorage.parse(remote_path)
@@ -115,10 +133,8 @@ class FileTransferClient:
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
+        response = self.aws.get(download.url)
         with open(local_path, "wb") as f:
-            response = self.aws_session.get(download.url)
-            if not response.ok:
-                raise SaturnError(response.text)
             f.write(response.content)
 
         set_last_modified(local_path, download.updated_at)
@@ -148,14 +164,29 @@ class FileTransferClient:
                 copy = self.api.Copy.start(file_source, file_destination)
                 self._presigned_copy(copy)
 
-    def _presigned_copy(self, copy: ObjectStoragePresignedCopy):
+    def _copy_file(self, source: ObjectStorage, destination: ObjectStorage):
+        copy = self.api.Copy.start(source, destination)
+        done = False
+        completed_parts: List[ObjectStorageCompletePart] = []
+        while not done:
+            parts, done = self._presigned_copy(copy)
+            completed_parts.extend(parts)
+            if not done:
+                # Presigned URL(s) expired during copy
+                copy = self.api.Copy.resume(copy.object_storage_copy_id)
+                copy.parts = copy.parts[len(completed_parts):]
+
+        self.api.Copy.complete(
+            copy.object_storage_copy_id, ObjectStorageCompletedCopy(parts=completed_parts)
+        )
+
+    def _presigned_copy(self, copy: ObjectStoragePresignedCopy) -> Tuple[List[ObjectStorageCompletePart], bool]:
         completed_parts: List[ObjectStorageCompletePart] = []
         for part in copy.parts:
-            response = self.aws_session.put(
-                part.url, headers=part.headers
-            )
-            if not response.ok:
-                raise SaturnError(response.text)
+            try:
+                response = self.aws.put(part.url, headers=part.headers)
+            except ExpiredSignature:
+                return completed_parts, False
 
             if "Etag" in response.headers:
                 # Copying zero-byte object uses upload_part rather than upload_part_copy
@@ -168,9 +199,7 @@ class FileTransferClient:
                 ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
             )
 
-        self.api.Copy.complete(
-            copy.object_storage_copy_id, ObjectStorageCompletedCopy(parts=completed_parts)
-        )
+        return completed_parts, True
 
 
 def set_last_modified(local_path: str, last_modified: datetime):

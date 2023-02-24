@@ -34,7 +34,7 @@ class UploadAPI(BaseAPI):
         response = self.session.delete(url)
         self.check_error(response, 204)
 
-    def resume(self, upload_id: str) -> Dict[str, Any]:
+    def resume(self, upload_id: str) -> ObjectStoragePresignedUpload:
         url = self.make_url(upload_id)
         response = self.session.get(url)
         self.check_error(response, 200)

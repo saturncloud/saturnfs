@@ -1,13 +1,13 @@
-
-
-
-from typing import Any, Dict
-
-
 class SaturnError(Exception):
     def __init__(self, message: str) -> None:
         self.message = message
         super().__init__(message)
+
+
+class ExpiredSignature(SaturnError):
+    def __init__(self) -> None:
+        self.message = "Presigned URL has expired"
+        super().__init__(self.message)
 
 
 class PathErrors:
