@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Iterable, Optional
 
 from saturnfs.api.object_storage import ObjectStorageAPI
 from saturnfs.client.file_transfer import FileTransferClient
@@ -7,6 +7,7 @@ from saturnfs.schemas import (
     ObjectStorageListResult,
     ObjectStoragePrefix,
 )
+from saturnfs.schemas.list import ObjectStorageFileDetails
 
 
 class SaturnFS:
@@ -29,6 +30,12 @@ class SaturnFS:
     def list(self, path_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None) -> ObjectStorageListResult:
         prefix = ObjectStoragePrefix.parse(path_prefix)
         return self.api.List.get(prefix, last_key, max_keys)
+
+    def list_all(self, path_prefix: str) -> Iterable[ObjectStorageFileDetails]:
+        prefix = ObjectStoragePrefix.parse(path_prefix)
+        for files in self.api.List.recurse(prefix):
+            for file in files:
+                yield file
 
     def exists(self, remote_path: str) -> bool:
         file = ObjectStorage.parse(remote_path)

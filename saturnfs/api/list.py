@@ -1,4 +1,4 @@
-from typing import Generator, List, Optional
+from typing import Iterable, List, Optional
 from saturnfs.api.base import BaseAPI
 from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
 from saturnfs.schemas.reference import ObjectStoragePrefix
@@ -25,7 +25,7 @@ class ListAPI(BaseAPI):
         self.check_error(response, 200)
         return ObjectStorageListResult.loads(response.content)
 
-    def recurse(self, prefix: ObjectStoragePrefix) -> Generator[List[ObjectStorageFileDetails], None, None]:
+    def recurse(self, prefix: ObjectStoragePrefix) -> Iterable[List[ObjectStorageFileDetails]]:
         last_key: Optional[str] = None
         while True:
             results = self.get(prefix, last_key, delimited=False)

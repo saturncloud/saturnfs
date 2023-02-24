@@ -1,4 +1,5 @@
 import json
+from re import L
 import sys
 from typing import Optional
 import click
@@ -27,10 +28,15 @@ def delete(remote_path: str, recursive: bool):
 @click.argument("path_prefix")
 @click.option("--last-key", "-l", help="Last seen key for pagination")
 @click.option("--max-keys", "-m", help="Maximum number of results to return")
-def list(path_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None):
+@click.option("--recursive", "-r", is_flag=True, default=False, help="List all files recursively under the given prefix")
+def list(path_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None, recursive: bool = False):
     sfs = SaturnFS()
-    results = sfs.list(path_prefix, last_key, max_keys)
-    click.echo(json.dumps(results.dump(), indent=2))
+    if recursive:
+        for file in sfs.list_all(path_prefix):
+            click.echo(json.dumps(file.dump()))
+    else:
+        results = sfs.list(path_prefix, last_key, max_keys)
+        click.echo(json.dumps(results.dump(), indent=2))
 
 
 @click.command("exists")
