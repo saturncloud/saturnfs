@@ -50,18 +50,18 @@ class FileTransferClient:
         self._upload(local_path, remote)
 
     def upload_dir(self, local_dir: str, remote_prefix: str):
-        remote = ObjectStoragePrefix.parse(remote_prefix)
+        remote_dir = ObjectStoragePrefix.parse(remote_prefix)
 
         for root, _, files in os.walk(local_dir):
             for file in files:
                 local_path = os.path.join(root, file)
                 local_relative_path = relative_path(local_dir, local_path)
-                remote = ObjectStorage(
-                    file_path=os.path.join(remote.prefix, local_relative_path),
-                    org_name=remote.org_name,
-                    owner_name=remote.owner_name,
+                remote_file = ObjectStorage(
+                    file_path=os.path.join(remote_dir.prefix, local_relative_path),
+                    org_name=remote_dir.org_name,
+                    owner_name=remote_dir.owner_name,
                 )
-                self._upload(local_path, remote)
+                self._upload(local_path, remote_file)
 
     def _upload(self, local_path: str, remote: ObjectStorage):
         size = os.path.getsize(local_path)
@@ -97,16 +97,16 @@ class FileTransferClient:
         self._presigned_download(download, local_path)
 
     def download_dir(self, remote_prefix: str, local_dir: str):
-        remote = ObjectStoragePrefix.parse(remote_prefix)
+        remote_dir = ObjectStoragePrefix.parse(remote_prefix)
 
-        for files in self.api.List.recurse(remote):
+        for files in self.api.List.recurse(remote_dir):
             bulk_download = self.api.BulkDownload.get(
-                [file.file_path for file in files], remote.org_name, remote.owner_name
+                [file.file_path for file in files], remote_dir.org_name, remote_dir.owner_name
             )
 
             for download in bulk_download.files:
                 local_path = os.path.join(
-                    local_dir, relative_path(remote.prefix, download.file_path)
+                    local_dir, relative_path(remote_dir.prefix, download.file_path)
                 )
                 self._presigned_download(download, local_path)
 
