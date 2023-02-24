@@ -2,35 +2,16 @@ from typing import Any, Dict, List, Optional
 
 from saturnfs.api.base import BaseAPI
 from saturnfs.schemas.copy import ObjectStorageCompletedCopy, ObjectStoragePresignedCopy
-from saturnfs.schemas.reference import FileReference
+from saturnfs.schemas.reference import ObjectStorage
 
 
 class CopyAPI(BaseAPI):
     endpoint = "/api/object_storage/copy"
 
-    def list(
+    def start(
         self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        query_args = {}
-        if file_path:
-            query_args["file_path"] = file_path
-        if org_name:
-            query_args["org_name"] = org_name
-        if owner_name:
-            query_args["owner_name"] = owner_name
-        url = self.make_url(query_args=query_args)
-        response = self.session.get(url)
-        self.check_error(response, 200)
-        # TODO: Schema
-        return response.json()["copies"]
-
-    def create(
-        self,
-        source: FileReference,
-        destination: FileReference,
+        source: ObjectStorage,
+        destination: ObjectStorage,
     ) -> ObjectStoragePresignedCopy:
         url = self.make_url()
         data = {
@@ -56,3 +37,22 @@ class CopyAPI(BaseAPI):
         response = self.session.get(url)
         self.check_error(response, 200)
         return ObjectStoragePresignedCopy.loads(response.content)
+
+    def list(
+        self,
+        file_path: Optional[str] = None,
+        org_name: Optional[str] = None,
+        owner_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        query_args = {}
+        if file_path:
+            query_args["file_path"] = file_path
+        if org_name:
+            query_args["org_name"] = org_name
+        if owner_name:
+            query_args["owner_name"] = owner_name
+        url = self.make_url(query_args=query_args)
+        response = self.session.get(url)
+        self.check_error(response, 200)
+        # TODO: Schema
+        return response.json()["copies"]

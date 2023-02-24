@@ -3,7 +3,7 @@ import sys
 from typing import Optional
 import click
 
-from saturnfs.client.saturnfs import SaturnFS
+from saturnfs.client import SaturnFS
 
 
 @click.command("cp")

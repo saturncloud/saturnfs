@@ -1,14 +1,14 @@
 from typing import Generator, List, Optional
 from saturnfs.api.base import BaseAPI
 from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
-from saturnfs.schemas.reference import PrefixReference
+from saturnfs.schemas.reference import ObjectStoragePrefix
 
 class ListAPI(BaseAPI):
     endpoint = "/api/object_storage/"
 
-    def list(
+    def get(
         self,
-        prefix: PrefixReference,
+        prefix: ObjectStoragePrefix,
         last_key: Optional[str] = None,
         max_keys: Optional[int] = None,
         delimited: bool = True,
@@ -25,10 +25,10 @@ class ListAPI(BaseAPI):
         self.check_error(response, 200)
         return ObjectStorageListResult.loads(response.content)
 
-    def recurse(self, prefix: PrefixReference) -> Generator[List[ObjectStorageFileDetails], None, None]:
+    def recurse(self, prefix: ObjectStoragePrefix) -> Generator[List[ObjectStorageFileDetails], None, None]:
         last_key: Optional[str] = None
         while True:
-            results = self.list(prefix, last_key, delimited=False)
+            results = self.get(prefix, last_key, delimited=False)
             last_key = results.last_key
             yield results.files
 

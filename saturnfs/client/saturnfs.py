@@ -1,42 +1,42 @@
-from typing import Any, Dict, Optional
+from typing import Optional
 
-from saturnfs.api import DeleteAPI, ListAPI
-from saturnfs.api.delete import BulkDeleteAPI
-from saturnfs.client.file_transfer import FileTransfer
-from saturnfs.schemas.list import ObjectStorageListResult
-from saturnfs.schemas.reference import FileReference, PrefixReference
+from saturnfs.api.object_storage import ObjectStorageAPI
+from saturnfs.client.file_transfer import FileTransferClient
+from saturnfs.schemas import (
+    ObjectStorage,
+    ObjectStorageListResult,
+    ObjectStoragePrefix,
+)
 
 
 class SaturnFS:
+    def __init__(self):
+        self.api = ObjectStorageAPI()
+
     def copy(self, source_path: str, destination_path: str, recursive: bool = False):
-        file_transfer = FileTransfer()
-        file_transfer.copy(source_path, destination_path, recursive)
+        file_transfer = FileTransferClient()
+        file_transfer.copy(source_path, destination_path, recursive=recursive)
 
     def delete(self, remote_path: str, recursive: bool = False):
-        remote = FileReference.parse(remote_path)
+        remote = ObjectStorage.parse(remote_path)
         if not recursive:
-            delete_api = DeleteAPI()
-            delete_api.delete(remote)
+            self.api.Delete.delete(remote)
         else:
-            list_api = ListAPI()
-            bulk_delete_api = BulkDeleteAPI()
-            for files in list_api.recurse(remote):
+            for files in self.api.List.recurse(remote):
                 file_paths = [file.file_path for file in files]
-                bulk_delete_api.delete(file_paths, remote.org_name, remote.owner_name)
+                self.api.BulkDelete.delete(file_paths, remote.org_name, remote.owner_name)
 
     def list(self, path_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None) -> ObjectStorageListResult:
-        prefix = PrefixReference.parse(path_prefix)
-        list_api = ListAPI()
-        return list_api.list(prefix, last_key, max_keys)
+        prefix = ObjectStoragePrefix.parse(path_prefix)
+        return self.api.List.get(prefix, last_key, max_keys)
 
     def exists(self, remote_path: str) -> bool:
-        file = FileReference.parse(remote_path)
-        prefix = PrefixReference(
+        file = ObjectStorage.parse(remote_path)
+        prefix = ObjectStoragePrefix(
             prefix=file.file_path, org_name=file.org_name, owner_name=file.owner_name
         )
 
-        list_api = ListAPI()
-        results = list_api.list(prefix, max_keys=1)
+        results = self.api.List.get(prefix, max_keys=1)
         if file.file_path.endswith("/"):
             if len(results.dirs) > 0:
                 dir_path = results.dirs[0].dir_path

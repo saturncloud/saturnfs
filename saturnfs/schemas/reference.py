@@ -10,30 +10,30 @@ from saturnfs.schemas.utils import DataclassSchema
 
 
 @marshmallow_dataclass.dataclass
-class FileReference(DataclassSchema):
+class ObjectStorage(DataclassSchema):
     file_path: str
     org_name: Optional[str] = None
     owner_name: Optional[str] = None
 
     @classmethod
-    def parse(cls, remote_path: str) -> FileReference:
+    def parse(cls, remote_path: str) -> ObjectStorage:
         org_name, owner_name, file_path = parse_remote(remote_path)
         if not file_path:
              raise SaturnError(PathErrors.INVALID_REMOTE_PATH)
 
-        return cls(file_path, org_name, owner_name)
+        return cls(file_path=file_path, org_name=org_name, owner_name=owner_name)
 
 
 @marshmallow_dataclass.dataclass
-class PrefixReference(DataclassSchema):
+class ObjectStoragePrefix(DataclassSchema):
+    org_name: str
+    owner_name: str
     prefix: Optional[str] = None
-    org_name: Optional[str] = None
-    owner_name: Optional[str] = None
 
     @classmethod
-    def parse(cls, remote_prefix: str) -> PrefixReference:
+    def parse(cls, remote_prefix: str) -> ObjectStoragePrefix:
         org_name, owner_name, prefix = parse_remote(remote_prefix)
-        return cls(prefix, org_name, owner_name)
+        return cls(org_name=org_name, owner_name=owner_name, prefix=prefix)
 
 
 def parse_remote(path: str) -> Tuple[str, str, str]:

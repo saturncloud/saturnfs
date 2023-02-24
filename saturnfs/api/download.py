@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from saturnfs.api.base import BaseAPI
 from saturnfs.schemas.download import ObjectStorageBulkDownload, ObjectStoragePresignedDownload
-from saturnfs.schemas.reference import FileReference
+from saturnfs.schemas.reference import ObjectStorage
 
 
 class DownloadAPI(BaseAPI):
@@ -10,7 +10,7 @@ class DownloadAPI(BaseAPI):
 
     def get(
         self,
-        source: FileReference,
+        source: ObjectStorage,
     ) -> ObjectStoragePresignedDownload:
         url = self.make_url()
         response = self.session.post(url, json=source.dump())

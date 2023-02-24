@@ -1,7 +1,7 @@
 from typing import List
 from saturnfs.api.base import BaseAPI
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults
-from saturnfs.schemas.reference import FileReference
+from saturnfs.schemas.reference import ObjectStorage
 
 
 class DeleteAPI(BaseAPI):
@@ -9,7 +9,7 @@ class DeleteAPI(BaseAPI):
 
     def delete(
         self,
-        remote: FileReference,
+        remote: ObjectStorage,
     ) -> None:
         url = self.make_url()
         response = self.session.delete(url, json=remote.dump())
