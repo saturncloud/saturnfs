@@ -47,7 +47,9 @@ def parse_remote(path: str) -> Tuple[str, str, str]:
         owner_name: Optional[str] = None
         org_name: Optional[str] = None
 
-        path = path[len(settings.SATURNFS_FILE_PREFIX):]
+        if path.startswith(settings.SATURNFS_FILE_PREFIX):
+            path = path[len(settings.SATURNFS_FILE_PREFIX):]
+
         path_split = path.split("/", 2)
         if len(path_split) < 2 or path_split[1] == "":
             raise SaturnError(PathErrors.INVALID_REMOTE_PATH)

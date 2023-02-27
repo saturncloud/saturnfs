@@ -14,10 +14,25 @@ from saturnfs.schemas.reference import BulkObjectStorage
 class SaturnFS:
     def __init__(self):
         self.object_storage_client = ObjectStorageClient()
+        self.file_transfer = FileTransferClient(self.object_storage_client)
 
-    def copy(self, source_path: str, destination_path: str, recursive: bool = False):
-        file_transfer = FileTransferClient(self.object_storage_client)
-        file_transfer.copy(source_path, destination_path, recursive=recursive)
+    def get(self, remote_path: str, local_path: str, recursive: bool = False):
+        if recursive:
+            self.file_transfer.download_dir(remote_path, local_path)
+        else:
+            self.file_transfer.download_file(remote_path, local_path)
+
+    def put(self, local_path: str, remote_path: str, recursive: bool = False):
+        if recursive:
+            self.file_transfer.upload_dir(local_path, remote_path)
+        else:
+            self.file_transfer.upload_file(local_path, remote_path)
+
+    def copy(self, remote_source_path: str, remote_destination_path: str, recursive: bool = False):
+        if recursive:
+            self.file_transfer.copy_dir(remote_source_path, remote_destination_path)
+        else:
+            self.file_transfer.copy_file(remote_source_path, remote_destination_path)
 
     def delete(self, remote_path: str, recursive: bool = False):
         if not recursive:
@@ -33,12 +48,12 @@ class SaturnFS:
                 )
                 self.object_storage_client.delete_bulk(bulk)
 
-    def list(self, path_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None) -> ObjectStorageListResult:
-        prefix = ObjectStoragePrefix.parse(path_prefix)
+    def list(self, remote_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None) -> ObjectStorageListResult:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
         return self.object_storage_client.list(prefix, last_key, max_keys)
 
-    def list_all(self, path_prefix: str) -> Iterable[ObjectStorageFileDetails]:
-        prefix = ObjectStoragePrefix.parse(path_prefix)
+    def list_all(self, remote_prefix: str) -> Iterable[ObjectStorageFileDetails]:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
         for files in self.object_storage_client.list_iter(prefix):
             for file in files:
                 yield file

@@ -1,7 +1,7 @@
 import json
 from typing import Any, ClassVar, Dict, Type, TypeVar, Union
 
-from marshmallow import Schema as BaseSchema
+from marshmallow import EXCLUDE, Schema as BaseSchema
 
 from saturnfs.errors import SaturnError
 
@@ -23,7 +23,8 @@ class DataclassSchema:
 
     @classmethod
     def load(cls: Type[Self], data: Dict[str, Any], **kwargs) -> Self:
-        return cls.Schema().load(data, **kwargs)
+        # Exclude unknowns so old client version doesn't break if new data is added to schema
+        return cls.Schema(unknown=EXCLUDE).load(data, **kwargs)
 
     @classmethod
     def loads(cls: Type[Self], data: Union[str, bytes], **kwargs) -> Self:

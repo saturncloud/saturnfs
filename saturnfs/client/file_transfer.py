@@ -28,27 +28,6 @@ class FileTransferClient:
         self.object_storage_client = object_storage_client
         self.aws = AWSPresignedClient()
 
-    def copy(self, source_path: str, destination_path: str, recursive: bool = False):
-        source_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
-        destination_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
-        if source_is_local and destination_is_local:
-            raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
-
-        if recursive:
-            if source_is_local:
-                self.upload_dir(source_path, destination_path)
-            elif destination_is_local:
-                self.download_dir(source_path, destination_path)
-            else:
-                self.copy_dir(source_path, destination_path)
-        else:
-            if source_is_local:
-                self.upload_file(source_path, destination_path)
-            elif destination_is_local:
-                self.download_file(source_path, destination_path)
-            else:
-                self.copy_file(source_path, destination_path)
-
     def upload_file(self, local_path: str, remote_path: str):
         remote = ObjectStorage.parse(remote_path)
         self._upload(local_path, remote)
@@ -150,7 +129,9 @@ class FileTransferClient:
         destination = ObjectStorage.parse(destination_path)
         self._copy_file(source, destination)
 
-    def copy_dir(self, source: ObjectStoragePrefix, destination: ObjectStoragePrefix):
+    def copy_dir(self, source_prefix: str, destination_prefix: str):
+        source = ObjectStoragePrefix.parse(source_prefix)
+        destination = ObjectStoragePrefix.parse(destination_prefix)
         for files in self.object_storage_client.list_iter(source):
             for file in files:
                 file_source = ObjectStorage(
