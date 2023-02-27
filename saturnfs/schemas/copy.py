@@ -1,9 +1,9 @@
 from __future__ import annotations
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import marshmallow_dataclass
 
-from saturnfs.schemas.upload import ObjectStorageCompletedUpload
+from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStorageUploadInfo
 from saturnfs.schemas.utils import DataclassSchema
 
 
@@ -23,3 +23,20 @@ class ObjectStoragePresignedCopyPart(DataclassSchema):
 @marshmallow_dataclass.dataclass
 class ObjectStorageCompletedCopy(ObjectStorageCompletedUpload):
     ...
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageCopyList(DataclassSchema):
+    copies: List[ObjectStorageCopyInfo]
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageCopySource(DataclassSchema):
+    file_path: str
+    owner_name: str
+    org_name: str
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageCopyInfo(ObjectStorageUploadInfo):
+    copy_source: ObjectStorageCopySource

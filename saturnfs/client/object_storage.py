@@ -9,12 +9,12 @@ from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
 from saturnfs.api.list import ListAPI
 from saturnfs.api.upload import UploadAPI
-from saturnfs.schemas.copy import ObjectStorageCompletedCopy, ObjectStoragePresignedCopy
+from saturnfs.schemas.copy import ObjectStorageCompletedCopy, ObjectStorageCopyInfo, ObjectStorageCopyList, ObjectStoragePresignedCopy
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults
 from saturnfs.schemas.download import ObjectStorageBulkDownload, ObjectStoragePresignedDownload
 from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
 from saturnfs.schemas.reference import BulkObjectStorage, ObjectStorage, ObjectStoragePrefix
-from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStoragePresignedUpload
+from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStoragePresignedUpload, ObjectStorageUploadInfo, ObjectStorageUploadList
 
 
 class ObjectStorageClient:
@@ -50,17 +50,11 @@ class ObjectStorageClient:
         result = CopyAPI.resume(self.session, copy_id)
         return ObjectStoragePresignedCopy.load(result)
 
-    def list_copies(
-        self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    def list_copies(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageCopyInfo]:
         result = CopyAPI.list(
-            self.session, file_path=file_path, org_name=org_name, owner_name=owner_name
+            self.session, **prefix.dump()
         )
-        # TODO: Schema
-        return result["copies"]
+        return ObjectStorageCopyList.load(result).copies
 
     def delete_file(self, remote: ObjectStorage):
         DeleteAPI.delete(self.session, remote.dump())
@@ -117,14 +111,6 @@ class ObjectStorageClient:
         result = UploadAPI.resume(self.session, upload_id)
         return ObjectStoragePresignedUpload.load(result)
 
-    def list_uploads(
-        self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        result = UploadAPI.list(
-            self.session, file_path=file_path, org_name=org_name, owner_name=owner_name
-        )
-        # TODO: Schema
-        return result["uploads"]
+    def list_uploads(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageUploadInfo]:
+        result = UploadAPI.list(self.session, **prefix.dump())
+        return ObjectStorageUploadList.load(result).uploads

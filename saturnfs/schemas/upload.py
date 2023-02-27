@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime
 from typing import List
 
 import marshmallow_dataclass
@@ -28,3 +29,17 @@ class ObjectStorageCompletedUpload(DataclassSchema):
 class ObjectStorageCompletePart(DataclassSchema):
     etag: str
     part_number: int
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageUploadList(DataclassSchema):
+    uploads: List[ObjectStorageUploadInfo]
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageUploadInfo(DataclassSchema):
+    id: str
+    file_path: str
+    size: int
+    part_size: int
+    expires_at: datetime

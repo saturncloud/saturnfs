@@ -2,7 +2,7 @@ import sys
 import click
 from saturnfs.api.base import SaturnError
 
-from saturnfs.cli.commands import copy, delete, exists, list
+from saturnfs.cli import commands
 
 @click.group()
 def cli():
@@ -18,8 +18,12 @@ def entrypoint():
 
 
 if __name__ == "__main__":
-    cli.add_command(copy)
-    cli.add_command(delete)
-    cli.add_command(exists)
-    cli.add_command(list)
+    cli.add_command(commands.copy)
+    cli.add_command(commands.delete)
+    cli.add_command(commands.exists)
+    cli.add_command(commands.list)
+    cli.add_command(commands.list_uploads)
+    cli.add_command(commands.list_copies)
+    cli.add_command(commands.cancel_upload)
+    cli.add_command(commands.cancel_copy)
     entrypoint()

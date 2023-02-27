@@ -7,8 +7,10 @@ from saturnfs.schemas import (
     ObjectStorageListResult,
     ObjectStoragePrefix,
 )
+from saturnfs.schemas.copy import ObjectStorageCopyInfo
 from saturnfs.schemas.list import ObjectStorageFileDetails
 from saturnfs.schemas.reference import BulkObjectStorage
+from saturnfs.schemas.upload import ObjectStorageUploadInfo
 
 
 class SaturnFS:
@@ -70,18 +72,16 @@ class SaturnFS:
             return file.file_path == file_path
         return False
 
-    def list_copies(
-        self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        return self.object_storage_client.list_copies(file_path, org_name, owner_name)
+    def list_uploads(self, remote_prefix: str) -> List[ObjectStorageUploadInfo]:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
+        return self.object_storage_client.list_uploads(prefix)
 
-    def list_uploads(
-        self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        return self.object_storage_client.list_uploads(file_path, org_name, owner_name)
+    def list_copies(self, remote_prefix: str) -> List[ObjectStorageCopyInfo]:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
+        return self.object_storage_client.list_copies(prefix)
+
+    def cancel_upload(self, upload_id: str):
+        self.object_storage_client.cancel_upload(upload_id)
+
+    def cancel_copy(self, copy_id: str):
+        self.object_storage_client.cancel_copy(copy_id)

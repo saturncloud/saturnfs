@@ -15,8 +15,8 @@ from saturnfs.errors import PathErrors, SaturnError
 @click.option("--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively")
 def copy(source_path: str, destination_path: str, recursive: bool):
     sfs = SaturnFS()
-    src_is_local = source_path.startswith(settings.SATURNFS_FILE_PREFIX)
-    dst_is_local = source_path.startswith(settings.SATURNFS_FILE_PREFIX)
+    src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
+    dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
 
     if src_is_local and dst_is_local:
         raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
@@ -50,6 +50,36 @@ def list(prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = 
     else:
         results = sfs.list(prefix, last_key, max_keys)
         click.echo(json.dumps(results.dump(), indent=2))
+
+
+@click.command("list-uploads")
+@click.argument("prefix")
+def list_uploads(prefix: str):
+    sfs = SaturnFS()
+    uploads = sfs.list_uploads(prefix)
+    click.echo(json.dumps([upload.dump() for upload in uploads], indent=2))
+
+
+@click.command("list-copies")
+@click.argument("prefix")
+def list_copies(prefix: str):
+    sfs = SaturnFS()
+    copies = sfs.list_copies(prefix)
+    click.echo(json.dumps([copy.dump() for copy in copies], indent=2))
+
+
+@click.command("cancel-upload")
+@click.argument("upload_id")
+def cancel_upload(upload_id: str):
+    sfs = SaturnFS()
+    sfs.cancel_upload(upload_id)
+
+
+@click.command("cancel-copy")
+@click.argument("copy_id")
+def cancel_copy(copy_id: str):
+    sfs = SaturnFS()
+    sfs.cancel_copy(copy_id)
 
 
 @click.command("exists")
