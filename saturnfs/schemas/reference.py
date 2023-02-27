@@ -1,7 +1,7 @@
 from __future__ import annotations
 import os
 
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import marshmallow_dataclass
 
 from saturnfs import settings
@@ -12,8 +12,8 @@ from saturnfs.schemas.utils import DataclassSchema
 @marshmallow_dataclass.dataclass
 class ObjectStorage(DataclassSchema):
     file_path: str
-    org_name: Optional[str] = None
-    owner_name: Optional[str] = None
+    org_name: str
+    owner_name: str
 
     @classmethod
     def parse(cls, remote_path: str) -> ObjectStorage:
@@ -34,6 +34,13 @@ class ObjectStoragePrefix(DataclassSchema):
     def parse(cls, remote_prefix: str) -> ObjectStoragePrefix:
         org_name, owner_name, prefix = parse_remote(remote_prefix)
         return cls(org_name=org_name, owner_name=owner_name, prefix=prefix)
+
+
+@marshmallow_dataclass.dataclass
+class BulkObjectStorage(DataclassSchema):
+    file_paths: List[str]
+    org_name: str
+    owner_name: str
 
 
 def parse_remote(path: str) -> Tuple[str, str, str]:

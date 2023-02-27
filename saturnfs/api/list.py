@@ -1,36 +1,18 @@
-from typing import Iterable, List, Optional
+from typing import Any, Dict
+
+from requests import Session
 from saturnfs.api.base import BaseAPI
-from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
-from saturnfs.schemas.reference import ObjectStoragePrefix
 
 class ListAPI(BaseAPI):
     endpoint = "/api/object_storage/"
 
+    @classmethod
     def get(
-        self,
-        prefix: ObjectStoragePrefix,
-        last_key: Optional[str] = None,
-        max_keys: Optional[int] = None,
-        delimited: bool = True,
-    ) -> ObjectStorageListResult:
-        data = prefix.dump()
-        if last_key:
-            data["last_key"] = last_key
-        if max_keys:
-            data["max_keys"] = max_keys
-        data["delimited"] = delimited
-
-        url = self.make_url(query_args=data)
-        response = self.session.get(url)
-        self.check_error(response, 200)
-        return ObjectStorageListResult.loads(response.content)
-
-    def recurse(self, prefix: ObjectStoragePrefix) -> Iterable[List[ObjectStorageFileDetails]]:
-        last_key: Optional[str] = None
-        while True:
-            results = self.get(prefix, last_key, delimited=False)
-            last_key = results.last_key
-            yield results.files
-
-            if not last_key:
-                break
+        cls,
+        session: Session,
+        **query_args: Any,
+    ) -> Dict[str, Any]:
+        url = cls.make_url(query_args=query_args)
+        response = session.get(url)
+        cls.check_error(response, 200)
+        return response.json()

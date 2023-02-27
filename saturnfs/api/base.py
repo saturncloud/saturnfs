@@ -10,19 +10,18 @@ from saturnfs.errors import SaturnError
 class BaseAPI:
     endpoint = "/"
 
-    def __init__(self, session: Session):
-        self.session = session
-
-    def make_url(self, subpath: Optional[str] = None, query_args: Optional[Dict[str, str]] = None, **kwargs) -> str:
-        url = urljoin(settings.SATURN_BASE_URL, self.endpoint)
+    @classmethod
+    def make_url(cls, subpath: Optional[str] = None, query_args: Optional[Dict[str, Optional[str]]] = None) -> str:
+        url = urljoin(settings.SATURN_BASE_URL, cls.endpoint)
         if subpath:
             subpath = subpath.lstrip("/")
             url = url.rstrip("/") + f"/{subpath}"
         if query_args:
-            url += "?" + urlencode(query_args)
+            url += "?" + urlencode({k: v for k, v in query_args.items() if v is not None})
         return url
 
-    def check_error(self, response: Response, expected_status: int) -> None:
+    @classmethod
+    def check_error(cls, response: Response, expected_status: int) -> None:
         if response.status_code != expected_status:
             if response.content:
                 error = response.json()

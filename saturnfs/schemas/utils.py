@@ -22,9 +22,13 @@ class DataclassSchema:
         ordered = True
 
     @classmethod
+    def load(cls: Type[Self], data: Dict[str, Any], **kwargs) -> Self:
+        return cls.Schema().load(data, **kwargs)
+
+    @classmethod
     def loads(cls: Type[Self], data: Union[str, bytes], **kwargs) -> Self:
         try:
-            return cls.Schema().load(json.loads(data), **kwargs)
+            return cls.load(json.loads(data), **kwargs)
         except json.JSONDecodeError as e:
             raise SaturnError("Invalid JSON body") from e
 

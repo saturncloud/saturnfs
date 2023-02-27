@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 
+from requests import Session
+
 from saturnfs.api.base import BaseAPI
 from saturnfs.schemas.reference import ObjectStorage
 from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStoragePresignedUpload
@@ -8,53 +10,43 @@ from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStorageP
 class UploadAPI(BaseAPI):
     endpoint = "/api/object_storage/upload"
 
+    @classmethod
     def start(
-        self,
-        destination: ObjectStorage,
-        size: int,
-        part_size: Optional[int] = None,
+        cls,
+        session: Session,
+        data: Dict[str, Any]
     ) -> ObjectStoragePresignedUpload:
-        url = self.make_url()
-        data = destination.dump()
-        data.update({
-            "size": size,
-            "part_size": part_size,
-        })
-        response = self.session.post(url, json=data)
-        self.check_error(response, 200)
-        return ObjectStoragePresignedUpload.loads(response.content)
+        url = cls.make_url()
+        response = session.post(url, json=data)
+        cls.check_error(response, 200)
+        return response.json()
 
-    def complete(self, upload_id: str, completed_upload: ObjectStorageCompletedUpload) -> None:
-        url = self.make_url(upload_id)
-        response = self.session.post(url, json=completed_upload.dump())
-        self.check_error(response, 204)
+    @classmethod
+    def complete(cls, session: Session, upload_id: str, data: Dict[str, Any]) -> None:
+        url = cls.make_url(upload_id)
+        response = session.post(url, json=data)
+        cls.check_error(response, 204)
 
-    def cancel(self, upload_id: str) -> None:
-        url = self.make_url(upload_id)
-        response = self.session.delete(url)
-        self.check_error(response, 204)
+    @classmethod
+    def cancel(cls, session: Session, upload_id: str) -> None:
+        url = cls.make_url(upload_id)
+        response = session.delete(url)
+        cls.check_error(response, 204)
 
-    def resume(self, upload_id: str) -> ObjectStoragePresignedUpload:
-        url = self.make_url(upload_id)
-        response = self.session.get(url)
-        self.check_error(response, 200)
-        return ObjectStoragePresignedUpload.loads(response.content)
+    @classmethod
+    def resume(cls, session: Session, upload_id: str) -> Dict[str, Any]:
+        url = cls.make_url(upload_id)
+        response = session.get(url)
+        cls.check_error(response, 200)
+        return response.json()
 
+    @classmethod
     def list(
-        self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        query_args = {}
-        if file_path:
-            query_args["file_path"] = file_path
-        if org_name:
-            query_args["org_name"] = org_name
-        if owner_name:
-            query_args["owner_name"] = owner_name
-        url = self.make_url(query_args=query_args)
-        response = self.session.get(url)
-        self.check_error(response, 200)
-        # TODO: schema
-        return response.json()["uploads"]
+        cls,
+        session: Session,
+        **query_args: Any,
+    ) -> Dict[str, Any]:
+        url = cls.make_url(query_args=query_args)
+        response = session.get(url)
+        cls.check_error(response, 200)
+        return response.json()

@@ -2,10 +2,9 @@ from datetime import datetime
 import os
 from typing import List, Tuple
 from xml.etree import ElementTree
-import requests
 
 from saturnfs import settings
-from saturnfs.api.object_storage import ObjectStorageAPI
+from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature, PathErrors, SaturnError
 from saturnfs.schemas import (
@@ -18,11 +17,15 @@ from saturnfs.schemas import (
     ObjectStorageCompletedUpload,
     ObjectStoragePresignedUpload,
 )
+from saturnfs.schemas.reference import BulkObjectStorage
 
 
 class FileTransferClient:
-    def __init__(self):
-        self.api = ObjectStorageAPI()
+    """
+    Translates copy commands to specific upload/download/copy operations
+    """
+    def __init__(self, object_storage_client: ObjectStorageClient):
+        self.object_storage_client = object_storage_client
         self.aws = AWSPresignedClient()
 
     def copy(self, source_path: str, destination_path: str, recursive: bool = False):
@@ -71,7 +74,7 @@ class FileTransferClient:
         else:
             part_size = size
 
-        upload = self.api.Upload.start(remote, size, part_size)
+        upload = self.object_storage_client.start_upload(remote, size, part_size)
         done = False
         completed_parts: List[ObjectStorageCompletePart] = []
         file_offset: int = 0
@@ -81,11 +84,11 @@ class FileTransferClient:
             if not done:
                 # Presigned URL(s) expired during upload
                 # TODO: May want to set rate limit/max retries
-                upload = self.api.Upload.resume(upload.object_storage_upload_id)
+                upload = self.object_storage_client.resume_upload(upload.object_storage_upload_id)
                 file_offset = sum(part.size for part in upload.parts[:len(completed_parts)])
                 upload.parts = upload.parts[len(completed_parts):]
 
-        self.api.Upload.complete(
+        self.object_storage_client.complete_upload(
             upload.object_storage_upload_id, ObjectStorageCompletedUpload(parts=completed_parts)
         )
 
@@ -111,16 +114,19 @@ class FileTransferClient:
 
     def download_file(self, remote_path: str, local_path: str):
         remote = ObjectStorage.parse(remote_path)
-        download = self.api.Download.get(remote)
+        download = self.object_storage_client.download_file(remote)
         self._presigned_download(download, local_path)
 
     def download_dir(self, remote_prefix: str, local_dir: str):
         remote_dir = ObjectStoragePrefix.parse(remote_prefix)
 
-        for files in self.api.List.recurse(remote_dir):
-            bulk_download = self.api.BulkDownload.get(
-                [file.file_path for file in files], remote_dir.org_name, remote_dir.owner_name
+        for files in self.object_storage_client.list_iter(remote_dir):
+            bulk = BulkObjectStorage(
+                file_paths=[file.file_path for file in files],
+                org_name=remote_dir.org_name,
+                owner_name=remote_dir.owner_name,
             )
+            bulk_download = self.object_storage_client.download_bulk(bulk)
 
             for download in bulk_download.files:
                 local_path = os.path.join(
@@ -142,12 +148,10 @@ class FileTransferClient:
     def copy_file(self, source_path: str, destination_path: str):
         source = ObjectStorage.parse(source_path)
         destination = ObjectStorage.parse(destination_path)
-
-        copy = self.api.Copy.start(source, destination)
-        self._presigned_copy(copy)
+        self._copy_file(source, destination)
 
     def copy_dir(self, source: ObjectStoragePrefix, destination: ObjectStoragePrefix):
-        for files in self.api.List.recurse(source):
+        for files in self.object_storage_client.list_iter(source):
             for file in files:
                 file_source = ObjectStorage(
                     file_path=file.file_path,
@@ -161,11 +165,10 @@ class FileTransferClient:
                     org_name=destination.org_name,
                     owner_name=destination.owner_name
                 )
-                copy = self.api.Copy.start(file_source, file_destination)
-                self._presigned_copy(copy)
+                self._copy_file(file_source, file_destination)
 
     def _copy_file(self, source: ObjectStorage, destination: ObjectStorage):
-        copy = self.api.Copy.start(source, destination)
+        copy = self.object_storage_client.start_copy(source, destination)
         done = False
         completed_parts: List[ObjectStorageCompletePart] = []
         while not done:
@@ -173,10 +176,10 @@ class FileTransferClient:
             completed_parts.extend(parts)
             if not done:
                 # Presigned URL(s) expired during copy
-                copy = self.api.Copy.resume(copy.object_storage_copy_id)
+                copy = self.object_storage_client.resume_copy(copy.object_storage_copy_id)
                 copy.parts = copy.parts[len(completed_parts):]
 
-        self.api.Copy.complete(
+        self.object_storage_client.complete_copy(
             copy.object_storage_copy_id, ObjectStorageCompletedCopy(parts=completed_parts)
         )
 

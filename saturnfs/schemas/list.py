@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import field
 from datetime import datetime
+import os
 from typing import List, Optional
 import marshmallow_dataclass
+from saturnfs import settings
 
 from saturnfs.schemas.utils import DataclassSchema
 
@@ -12,7 +14,7 @@ from saturnfs.schemas.utils import DataclassSchema
 class ObjectStorageListResult(DataclassSchema):
     dirs: List[ObjectStorageDirDetails] = field(default_factory=list)
     files: List[ObjectStorageFileDetails] = field(default_factory=list)
-    last_key: Optional[str] = None
+    next_last_key: Optional[str] = None
 
 
 @marshmallow_dataclass.dataclass

@@ -1,58 +1,46 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
+
+from requests import Session
 
 from saturnfs.api.base import BaseAPI
-from saturnfs.schemas.copy import ObjectStorageCompletedCopy, ObjectStoragePresignedCopy
-from saturnfs.schemas.reference import ObjectStorage
 
 
 class CopyAPI(BaseAPI):
     endpoint = "/api/object_storage/copy"
 
+    @classmethod
     def start(
-        self,
-        source: ObjectStorage,
-        destination: ObjectStorage,
-    ) -> ObjectStoragePresignedCopy:
-        url = self.make_url()
-        data = {
-            "source": source.dump(),
-            "destination": destination.dump(),
-        }
-        response = self.session.post(url, json=data)
-        self.check_error(response, 200)
-        return ObjectStoragePresignedCopy.loads(response.content)
+        cls,
+        session: Session,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        url = cls.make_url()
+        response = session.post(url, json=data)
+        cls.check_error(response, 200)
+        return response.json()
 
-    def complete(self, copy_id: str, completed_copy: ObjectStorageCompletedCopy) -> None:
-        url = self.make_url(copy_id)
-        response = self.session.post(url, json=completed_copy.dump())
-        self.check_error(response, 204)
+    @classmethod
+    def complete(cls, session: Session, copy_id: str, data: Dict[str, Any]) -> None:
+        url = cls.make_url(copy_id)
+        response = session.post(url, json=data)
+        cls.check_error(response, 204)
 
-    def cancel(self, copy_id: str) -> None:
-        url = self.make_url(copy_id)
-        response = self.session.delete(url)
-        self.check_error(response, 204)
+    @classmethod
+    def cancel(cls, session: Session, copy_id: str) -> None:
+        url = cls.make_url(copy_id)
+        response = session.delete(url)
+        cls.check_error(response, 204)
 
-    def resume(self, copy_id: str) -> ObjectStoragePresignedCopy:
-        url = self.make_url(copy_id)
-        response = self.session.get(url)
-        self.check_error(response, 200)
-        return ObjectStoragePresignedCopy.loads(response.content)
+    @classmethod
+    def resume(cls, session: Session, copy_id: str) -> Dict[str, Any]:
+        url = cls.make_url(copy_id)
+        response = session.get(url)
+        cls.check_error(response, 200)
+        return response.json()
 
-    def list(
-        self,
-        file_path: Optional[str] = None,
-        org_name: Optional[str] = None,
-        owner_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        query_args = {}
-        if file_path:
-            query_args["file_path"] = file_path
-        if org_name:
-            query_args["org_name"] = org_name
-        if owner_name:
-            query_args["owner_name"] = owner_name
-        url = self.make_url(query_args=query_args)
-        response = self.session.get(url)
-        self.check_error(response, 200)
-        # TODO: Schema
-        return response.json()["copies"]
+    @classmethod
+    def list(cls, session: Session, **query_args: Any) -> Dict[str, Any]:
+        url = cls.make_url(query_args=query_args)
+        response = session.get(url)
+        cls.check_error(response, 200)
+        return response.json()
