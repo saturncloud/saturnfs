@@ -22,7 +22,7 @@ setup(
     long_description_content_type="text/markdown",
     entry_points={
         "console_scripts": [
-            "main = saturnfs.cli.main:cli",
+            "saturnfs=saturnfs.cli.main:entrypoint",
         ],
     },
     url="https://saturncloud.io/",

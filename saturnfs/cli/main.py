@@ -11,14 +11,6 @@ def cli():
 
 
 def entrypoint():
-    try:
-        cli()
-    except SaturnError as e:
-        click.echo(f"Error: {e.message}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
     cli.add_command(commands.copy)
     cli.add_command(commands.delete)
     cli.add_command(commands.exists)
@@ -28,4 +20,12 @@ if __name__ == "__main__":
     cli.add_command(commands.cancel_upload)
     cli.add_command(commands.cancel_copy)
     cli.add_command(commands.storage_usage)
+    try:
+        cli()
+    except SaturnError as e:
+        click.echo(f"Error: {e.message}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
     entrypoint()
