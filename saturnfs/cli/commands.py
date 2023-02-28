@@ -8,11 +8,16 @@ from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
 
 
-@click.command("cp")
-@click.argument("source_path")
-@click.argument("destination_path")
+@click.group()
+def cli():
+    pass
+
+
+@cli.command("cp")
+@click.argument("source_path", type=str)
+@click.argument("destination_path", type=str)
 @click.option(
-    "--part-size", "-p", default=None, help="Max part size for uploading or copying a file"
+    "--part-size", "-p", type=int, default=None, help="Max part size in bytes for uploading or copying a file in chunks"
 )
 @click.option(
     "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
@@ -33,8 +38,8 @@ def copy(source_path: str, destination_path: str, part_size: Optional[int], recu
         sfs.copy(source_path, destination_path, part_size, recursive)
 
 
-@click.command("rm")
-@click.argument("path")
+@cli.command("rm")
+@click.argument("path", type=str)
 @click.option(
     "--recursive",
     "-r",
@@ -47,10 +52,10 @@ def delete(path: str, recursive: bool):
     sfs.delete(path, recursive=recursive)
 
 
-@click.command("ls")
-@click.argument("prefix")
-@click.option("--last-key", "-l", help="Last seen key for pagination")
-@click.option("--max-keys", "-m", help="Maximum number of results to return")
+@cli.command("ls")
+@click.argument("prefix", type=str)
+@click.option("--last-key", "-l", help="Last seen key for pagination", type=str)
+@click.option("--max-keys", "-m", help="Maximum number of results to return", type=int)
 @click.option(
     "--recursive",
     "-r",
@@ -73,38 +78,38 @@ def list(
         click.echo(json.dumps(results.dump(), indent=2))
 
 
-@click.command("list-uploads")
-@click.argument("prefix")
+@cli.command("list-uploads")
+@click.argument("prefix", type=str)
 def list_uploads(prefix: str):
     sfs = SaturnFS()
     uploads = sfs.list_uploads(prefix)
     click.echo(json.dumps([upload.dump() for upload in uploads], indent=2))
 
 
-@click.command("list-copies")
-@click.argument("prefix")
+@cli.command("list-copies")
+@click.argument("prefix", type=str)
 def list_copies(prefix: str):
     sfs = SaturnFS()
     copies = sfs.list_copies(prefix)
     click.echo(json.dumps([copy.dump() for copy in copies], indent=2))
 
 
-@click.command("cancel-upload")
-@click.argument("upload_id")
+@cli.command("cancel-upload")
+@click.argument("upload_id", type=str)
 def cancel_upload(upload_id: str):
     sfs = SaturnFS()
     sfs.cancel_upload(upload_id)
 
 
-@click.command("cancel-copy")
-@click.argument("copy_id")
+@cli.command("cancel-copy")
+@click.argument("copy_id", type=str)
 def cancel_copy(copy_id: str):
     sfs = SaturnFS()
     sfs.cancel_copy(copy_id)
 
 
-@click.command("exists")
-@click.argument("path")
+@cli.command("exists")
+@click.argument("path", type=str)
 def exists(path: str):
     sfs = SaturnFS()
     path_exists = sfs.exists(path)
@@ -113,9 +118,9 @@ def exists(path: str):
         sys.exit(1)
 
 
-@click.command("usage")
-@click.option("--org", help="Org name")
-@click.option("--owner", help="Owner name")
+@cli.command("usage")
+@click.option("--org", type=str, help="Org name")
+@click.option("--owner", type=str, help="Owner name")
 def storage_usage(org: Optional[str], owner: Optional[str]):
     sfs = SaturnFS()
     usage = sfs.usage(org, owner)

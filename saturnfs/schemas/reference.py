@@ -48,6 +48,7 @@ def parse_remote(path: str) -> Tuple[str, str, str]:
 
     if path.startswith(settings.SATURNFS_FILE_PREFIX):
         path = path[len(settings.SATURNFS_FILE_PREFIX) :]
+    path = path.lstrip("/")
 
     path_split = path.split("/", 2)
     if len(path_split) < 2 or path_split[1] == "":
