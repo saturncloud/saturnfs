@@ -24,17 +24,23 @@ class SaturnFS:
         else:
             self.file_transfer.download_file(remote_path, local_path)
 
-    def put(self, local_path: str, remote_path: str, recursive: bool = False):
+    def put(self, local_path: str, remote_path: str, part_size: Optional[int] = None, recursive: bool = False):
         if recursive:
-            self.file_transfer.upload_dir(local_path, remote_path)
+            self.file_transfer.upload_dir(local_path, remote_path, part_size)
         else:
-            self.file_transfer.upload_file(local_path, remote_path)
+            self.file_transfer.upload_file(local_path, remote_path, part_size)
 
-    def copy(self, remote_source_path: str, remote_destination_path: str, recursive: bool = False):
+    def copy(
+        self,
+        remote_source_path: str,
+        remote_destination_path: str,
+        part_size: Optional[int] = None,
+        recursive: bool = False,
+    ):
         if recursive:
-            self.file_transfer.copy_dir(remote_source_path, remote_destination_path)
+            self.file_transfer.copy_dir(remote_source_path, remote_destination_path, part_size)
         else:
-            self.file_transfer.copy_file(remote_source_path, remote_destination_path)
+            self.file_transfer.copy_file(remote_source_path, remote_destination_path, part_size)
 
     def delete(self, remote_path: str, recursive: bool = False):
         if not recursive:

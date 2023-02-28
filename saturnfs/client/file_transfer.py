@@ -1,13 +1,14 @@
 from datetime import datetime
 from io import BufferedReader
+import math
 import os
-from typing import Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from xml.etree import ElementTree
 
 from saturnfs import settings
 from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.client.aws import AWSPresignedClient
-from saturnfs.errors import ExpiredSignature, PathErrors, SaturnError
+from saturnfs.errors import ExpiredSignature
 from saturnfs.schemas import (
     ObjectStorageCompletedCopy,
     ObjectStoragePresignedCopy,
@@ -29,11 +30,11 @@ class FileTransferClient:
         self.object_storage_client = object_storage_client
         self.aws = AWSPresignedClient()
 
-    def upload_file(self, local_path: str, remote_path: str):
+    def upload_file(self, local_path: str, remote_path: str, part_size: Optional[int] = None):
         remote = ObjectStorage.parse(remote_path)
-        self._upload(local_path, remote)
+        self._upload(local_path, remote, part_size)
 
-    def upload_dir(self, local_dir: str, remote_prefix: str):
+    def upload_dir(self, local_dir: str, remote_prefix: str, part_size: Optional[int] = None):
         remote_dir = ObjectStoragePrefix.parse(remote_prefix)
 
         for root, _, files in os.walk(local_dir):
@@ -45,13 +46,11 @@ class FileTransferClient:
                     org_name=remote_dir.org_name,
                     owner_name=remote_dir.owner_name,
                 )
-                self._upload(local_path, remote_file)
+                self._upload(local_path, remote_file, part_size)
 
-    def _upload(self, local_path: str, remote: ObjectStorage):
+    def _upload(self, local_path: str, remote: ObjectStorage, part_size: Optional[int] = None):
         size = os.path.getsize(local_path)
-        if size > settings.S3_MAX_PART_SIZE:
-            part_size = settings.S3_MIN_PART_SIZE
-        else:
+        if part_size is not None and part_size > size:
             part_size = size
 
         upload = self.object_storage_client.start_upload(remote, size, part_size)
@@ -127,12 +126,14 @@ class FileTransferClient:
 
         set_last_modified(local_path, download.updated_at)
 
-    def copy_file(self, source_path: str, destination_path: str):
+    def copy_file(self, source_path: str, destination_path: str, part_size: Optional[int] = None):
         source = ObjectStorage.parse(source_path)
         destination = ObjectStorage.parse(destination_path)
-        self._copy_file(source, destination)
+        self._copy_file(source, destination, part_size)
 
-    def copy_dir(self, source_prefix: str, destination_prefix: str):
+    def copy_dir(
+        self, source_prefix: str, destination_prefix: str, part_size: Optional[int] = None
+    ):
         source = ObjectStoragePrefix.parse(source_prefix)
         destination = ObjectStoragePrefix.parse(destination_prefix)
         for files in self.object_storage_client.list_iter(source):
@@ -149,10 +150,12 @@ class FileTransferClient:
                     org_name=destination.org_name,
                     owner_name=destination.owner_name
                 )
-                self._copy_file(file_source, file_destination)
+                self._copy_file(file_source, file_destination, part_size)
 
-    def _copy_file(self, source: ObjectStorage, destination: ObjectStorage):
-        copy = self.object_storage_client.start_copy(source, destination)
+    def _copy_file(
+        self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
+    ):
+        copy = self.object_storage_client.start_copy(source, destination, part_size)
         done = False
         completed_parts: List[ObjectStorageCompletePart] = []
         while not done:

@@ -32,11 +32,15 @@ class ObjectStorageClient:
         self.session.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
         self.session.mount("http", retry)
 
-    def start_copy(self, source: ObjectStorage, destination: ObjectStorage) -> ObjectStoragePresignedCopy:
+    def start_copy(
+        self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
+    ) -> ObjectStoragePresignedCopy:
         data = {
             "source": source.dump(),
             "destination": destination.dump(),
         }
+        if part_size is not None:
+            data["destination"]["part_size"] = part_size
         result = CopyAPI.start(self.session, data)
         return ObjectStoragePresignedCopy.load(result)
 

@@ -12,8 +12,9 @@ from saturnfs.errors import PathErrors, SaturnError
 @click.command("cp")
 @click.argument("source_path")
 @click.argument("destination_path")
+@click.option("--part-size", "-p", default=None, help="Max part size for uploading or copying a file")
 @click.option("--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively")
-def copy(source_path: str, destination_path: str, recursive: bool):
+def copy(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool):
     sfs = SaturnFS()
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
@@ -22,11 +23,11 @@ def copy(source_path: str, destination_path: str, recursive: bool):
         raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
 
     if src_is_local:
-        sfs.put(source_path, destination_path, recursive)
+        sfs.put(source_path, destination_path, part_size, recursive)
     elif dst_is_local:
         sfs.get(source_path, destination_path, recursive)
     else:
-        sfs.copy(source_path, destination_path, recursive)
+        sfs.copy(source_path, destination_path, part_size, recursive)
 
 
 @click.command("rm")
