@@ -42,7 +42,7 @@ class ObjectStorageClient:
         self,
         retries: int = 10,
         backoff_factor: float = 0.1,
-        retry_statuses: List[int] = [409, 423],
+        retry_statuses: Iterable[int] = frozenset([409, 423]),
     ):
         retry = Retry(retries, backoff_factor=backoff_factor, status_forcelist=retry_statuses)
         self.session = Session()

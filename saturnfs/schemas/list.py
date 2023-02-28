@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import os
 from dataclasses import field
 from datetime import datetime
 from typing import List, Optional
 
 import marshmallow_dataclass
-from saturnfs import settings
 from saturnfs.schemas.utils import DataclassSchema
 
 
