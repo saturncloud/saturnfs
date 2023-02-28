@@ -14,8 +14,8 @@ class AWSPresignedClient:
     def __init__(self) -> None:
         self.session = Session()
 
-    def get(self, url: str) -> Response:
-        response = self.session.get(url)
+    def get(self, url: str, stream: bool = False) -> Response:
+        response = self.session.get(url, stream=stream)
         self.check_errors(response)
         return response
 

@@ -116,9 +116,10 @@ class FileTransferClient:
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
-        response = self.aws.get(download.url)
+        response = self.aws.get(download.url, stream=True)
         with open(local_path, "wb") as f:
-            f.write(response.content)
+            for chunk in response.iter_content(8192):
+                f.write(chunk)
 
         set_last_modified(local_path, download.updated_at)
 
