@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import BinaryIO, List, Optional, Tuple
+from typing import BinaryIO, Iterable, List, Optional, Tuple
 from xml.etree import ElementTree
 
 from saturnfs.client.aws import AWSPresignedClient
@@ -24,8 +24,8 @@ class FileTransferClient:
     Translates copy commands to specific upload/download/copy operations
     """
 
-    def __init__(self, object_storage_client: ObjectStorageClient):
-        self.object_storage_client = object_storage_client
+    def __init__(self, object_storage_client: Optional[ObjectStorageClient] = None):
+        self.object_storage_client = object_storage_client or ObjectStorageClient()
         self.aws = AWSPresignedClient()
 
     def upload_file(self, local_path: str, remote_path: str, part_size: Optional[int] = None):
@@ -35,16 +35,14 @@ class FileTransferClient:
     def upload_dir(self, local_dir: str, remote_prefix: str, part_size: Optional[int] = None):
         remote_dir = ObjectStoragePrefix.parse(remote_prefix)
 
-        for root, _, files in os.walk(local_dir):
-            for file in files:
-                local_path = os.path.join(root, file)
-                local_relative_path = relative_path(local_dir, local_path)
-                remote_file = ObjectStorage(
-                    file_path=os.path.join(remote_dir.prefix or "", local_relative_path),
-                    org_name=remote_dir.org_name,
-                    owner_name=remote_dir.owner_name,
-                )
-                self._upload(local_path, remote_file, part_size)
+        for local_path in walk_dir(local_dir):
+            local_relative_path = relative_path(local_dir, local_path)
+            remote_file = ObjectStorage(
+                file_path=os.path.join(remote_dir.prefix or "", local_relative_path),
+                org_name=remote_dir.org_name,
+                owner_name=remote_dir.owner_name,
+            )
+            self._upload(local_path, remote_file, part_size)
 
     def _upload(self, local_path: str, remote: ObjectStorage, part_size: Optional[int] = None):
         size = os.path.getsize(local_path)
@@ -231,3 +229,8 @@ def relative_path(prefix: Optional[str], file_path: str) -> str:
         if file_path.startswith(dirname):
             return file_path[len(dirname) :]
     return file_path
+
+def walk_dir(local_dir: str) -> Iterable[str]:
+    for root, _, files in os.walk(local_dir):
+        for file in files:
+            yield os.path.join(root, file)
