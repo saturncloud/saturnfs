@@ -15,7 +15,7 @@ class UploadAPI(BaseAPI):
         cls,
         session: Session,
         data: Dict[str, Any]
-    ) -> ObjectStoragePresignedUpload:
+    ) -> Dict[str, Any]:
         url = cls.make_url()
         response = session.post(url, json=data)
         cls.check_error(response, 200)

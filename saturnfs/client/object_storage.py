@@ -30,7 +30,7 @@ class ObjectStorageClient:
         retry = Retry(retries, backoff_factor=backoff_factor, status_forcelist=retry_statuses)
         self.session = Session()
         self.session.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
-        self.session.mount("http", retry)
+        self.session.mount("http", retry)  # type: ignore[arg-type]
 
     def start_copy(
         self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None

@@ -2,13 +2,13 @@ from datetime import datetime
 from io import BufferedReader
 import math
 import os
-from typing import List, Optional, Tuple
+from typing import BinaryIO, List, Optional, Tuple
 from xml.etree import ElementTree
 
 from saturnfs import settings
 from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.client.aws import AWSPresignedClient
-from saturnfs.errors import ExpiredSignature
+from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import (
     ObjectStorageCompletedCopy,
     ObjectStoragePresignedCopy,
@@ -42,7 +42,7 @@ class FileTransferClient:
                 local_path = os.path.join(root, file)
                 local_relative_path = relative_path(local_dir, local_path)
                 remote_file = ObjectStorage(
-                    file_path=os.path.join(remote_dir.prefix, local_relative_path),
+                    file_path=os.path.join(remote_dir.prefix or "", local_relative_path),
                     org_name=remote_dir.org_name,
                     owner_name=remote_dir.owner_name,
                 )
@@ -145,7 +145,7 @@ class FileTransferClient:
                 )
                 file_destination = ObjectStorage(
                     file_path=os.path.join(
-                        destination.prefix, relative_path(source.prefix, file.file_path)
+                        destination.prefix or "", relative_path(source.prefix, file.file_path)
                     ),
                     org_name=destination.org_name,
                     owner_name=destination.owner_name
@@ -178,6 +178,7 @@ class FileTransferClient:
             except ExpiredSignature:
                 return completed_parts, False
 
+            etag: Optional[str] = None
             if "Etag" in response.headers:
                 # Copying zero-byte object uses upload_part rather than upload_part_copy
                 etag = response.headers["ETag"]
@@ -185,6 +186,10 @@ class FileTransferClient:
                 root = ElementTree.fromstring(response.text)
                 namespace = root.tag.split("}")[0].lstrip("{")
                 etag = root.findtext(f"./{{{namespace}}}ETag")
+
+            if not etag:
+                raise SaturnError("Failed to parse etag from response")
+
             completed_parts.append(
                 ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
             )
@@ -197,7 +202,7 @@ class FileLimiter:
     File-like object that limits the max number of bytes to be
     read from the current position of an open file
     """
-    def __init__(self, file: BufferedReader, max_bytes: int):
+    def __init__(self, file: BinaryIO, max_bytes: int):
         self.file = file
         self.max_bytes = max_bytes
         self.bytes_read = 0
@@ -206,7 +211,7 @@ class FileLimiter:
         # to treat it as iterable chunks
         self.len = max_bytes
 
-    def read(self, amount=-1):
+    def read(self, amount: int = -1) -> bytes:
         if self.bytes_read >= self.max_bytes:
             return b''
 
@@ -216,14 +221,14 @@ class FileLimiter:
         return data
 
 
-
 def set_last_modified(local_path: str, last_modified: datetime):
     timestamp = last_modified.timestamp()
     os.utime(local_path, (timestamp, timestamp))
 
 
-def relative_path(prefix: str, file_path: str) -> str:
-    dirname = f"{os.path.dirname(prefix)}/"
-    if file_path.startswith(dirname):
-        return file_path[len(dirname):]
+def relative_path(prefix: Optional[str], file_path: str) -> str:
+    if prefix:
+        dirname = f"{os.path.dirname(prefix)}/"
+        if file_path.startswith(dirname):
+            return file_path[len(dirname):]
     return file_path
