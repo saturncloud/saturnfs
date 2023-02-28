@@ -1,9 +1,12 @@
 from __future__ import annotations
-from typing import Dict, List, Optional
+
+from typing import Dict, List
 
 import marshmallow_dataclass
-
-from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStorageUploadInfo
+from saturnfs.schemas.upload import (
+    ObjectStorageCompletedUpload,
+    ObjectStorageUploadInfo,
+)
 from saturnfs.schemas.utils import DataclassSchema
 
 

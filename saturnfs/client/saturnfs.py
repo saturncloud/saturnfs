@@ -1,12 +1,8 @@
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Iterable, List, Optional
 
-from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.client.file_transfer import FileTransferClient
-from saturnfs.schemas import (
-    ObjectStorage,
-    ObjectStorageListResult,
-    ObjectStoragePrefix,
-)
+from saturnfs.client.object_storage import ObjectStorageClient
+from saturnfs.schemas import ObjectStorage, ObjectStorageListResult, ObjectStoragePrefix
 from saturnfs.schemas.copy import ObjectStorageCopyInfo
 from saturnfs.schemas.list import ObjectStorageFileDetails
 from saturnfs.schemas.reference import BulkObjectStorage
@@ -24,7 +20,13 @@ class SaturnFS:
         else:
             self.file_transfer.download_file(remote_path, local_path)
 
-    def put(self, local_path: str, remote_path: str, part_size: Optional[int] = None, recursive: bool = False):
+    def put(
+        self,
+        local_path: str,
+        remote_path: str,
+        part_size: Optional[int] = None,
+        recursive: bool = False,
+    ):
         if recursive:
             self.file_transfer.upload_dir(local_path, remote_path, part_size)
         else:
@@ -56,7 +58,9 @@ class SaturnFS:
                 )
                 self.object_storage_client.delete_bulk(bulk)
 
-    def list(self, remote_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None) -> ObjectStorageListResult:
+    def list(
+        self, remote_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None
+    ) -> ObjectStorageListResult:
         prefix = ObjectStoragePrefix.parse(remote_prefix)
         return self.object_storage_client.list(prefix, last_key, max_keys)
 

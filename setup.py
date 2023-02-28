@@ -22,8 +22,8 @@ setup(
     long_description=(open("README.md").read() if os.path.exists("README.md") else ""),
     long_description_content_type="text/markdown",
     entry_points={
-        'console_scripts': [
-            'main = saturnfs.cli.main:cli',
+        "console_scripts": [
+            "main = saturnfs.cli.main:cli",
         ],
     },
     url="https://saturncloud.io/",

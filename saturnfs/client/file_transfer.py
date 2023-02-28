@@ -1,22 +1,19 @@
-from datetime import datetime
-from io import BufferedReader
-import math
 import os
+from datetime import datetime
 from typing import BinaryIO, List, Optional, Tuple
 from xml.etree import ElementTree
 
-from saturnfs import settings
-from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.client.aws import AWSPresignedClient
+from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import (
+    ObjectStorage,
     ObjectStorageCompletedCopy,
+    ObjectStorageCompletedUpload,
+    ObjectStorageCompletePart,
+    ObjectStoragePrefix,
     ObjectStoragePresignedCopy,
     ObjectStoragePresignedDownload,
-    ObjectStorage,
-    ObjectStoragePrefix,
-    ObjectStorageCompletePart,
-    ObjectStorageCompletedUpload,
     ObjectStoragePresignedUpload,
 )
 from saturnfs.schemas.reference import BulkObjectStorage
@@ -26,6 +23,7 @@ class FileTransferClient:
     """
     Translates copy commands to specific upload/download/copy operations
     """
+
     def __init__(self, object_storage_client: ObjectStorageClient):
         self.object_storage_client = object_storage_client
         self.aws = AWSPresignedClient()
@@ -64,8 +62,8 @@ class FileTransferClient:
                 # Presigned URL(s) expired during upload
                 # TODO: May want to set rate limit/max retries
                 upload = self.object_storage_client.resume_upload(upload.object_storage_upload_id)
-                file_offset = sum(part.size for part in upload.parts[:len(completed_parts)])
-                upload.parts = upload.parts[len(completed_parts):]
+                file_offset = sum(part.size for part in upload.parts[: len(completed_parts)])
+                upload.parts = upload.parts[len(completed_parts) :]
 
         self.object_storage_client.complete_upload(
             upload.object_storage_upload_id, ObjectStorageCompletedUpload(parts=completed_parts)
@@ -139,16 +137,14 @@ class FileTransferClient:
         for files in self.object_storage_client.list_iter(source):
             for file in files:
                 file_source = ObjectStorage(
-                    file_path=file.file_path,
-                    org_name=source.org_name,
-                    owner_name=source.owner_name
+                    file_path=file.file_path, org_name=source.org_name, owner_name=source.owner_name
                 )
                 file_destination = ObjectStorage(
                     file_path=os.path.join(
                         destination.prefix or "", relative_path(source.prefix, file.file_path)
                     ),
                     org_name=destination.org_name,
-                    owner_name=destination.owner_name
+                    owner_name=destination.owner_name,
                 )
                 self._copy_file(file_source, file_destination, part_size)
 
@@ -164,13 +160,15 @@ class FileTransferClient:
             if not done:
                 # Presigned URL(s) expired during copy
                 copy = self.object_storage_client.resume_copy(copy.object_storage_copy_id)
-                copy.parts = copy.parts[len(completed_parts):]
+                copy.parts = copy.parts[len(completed_parts) :]
 
         self.object_storage_client.complete_copy(
             copy.object_storage_copy_id, ObjectStorageCompletedCopy(parts=completed_parts)
         )
 
-    def _presigned_copy(self, copy: ObjectStoragePresignedCopy) -> Tuple[List[ObjectStorageCompletePart], bool]:
+    def _presigned_copy(
+        self, copy: ObjectStoragePresignedCopy
+    ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         completed_parts: List[ObjectStorageCompletePart] = []
         for part in copy.parts:
             try:
@@ -202,6 +200,7 @@ class FileLimiter:
     File-like object that limits the max number of bytes to be
     read from the current position of an open file
     """
+
     def __init__(self, file: BinaryIO, max_bytes: int):
         self.file = file
         self.max_bytes = max_bytes
@@ -213,7 +212,7 @@ class FileLimiter:
 
     def read(self, amount: int = -1) -> bytes:
         if self.bytes_read >= self.max_bytes:
-            return b''
+            return b""
 
         bytes_remaining = self.max_bytes - self.bytes_read
         data = self.file.read(min(amount, bytes_remaining))
@@ -230,5 +229,5 @@ def relative_path(prefix: Optional[str], file_path: str) -> str:
     if prefix:
         dirname = f"{os.path.dirname(prefix)}/"
         if file_path.startswith(dirname):
-            return file_path[len(dirname):]
+            return file_path[len(dirname) :]
     return file_path

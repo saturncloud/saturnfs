@@ -1,10 +1,9 @@
 import json
 from typing import Any, ClassVar, Dict, Type, TypeVar, Union
 
-from marshmallow import EXCLUDE, Schema as BaseSchema
-
+from marshmallow import EXCLUDE
+from marshmallow import Schema as BaseSchema
 from saturnfs.errors import SaturnError
-
 
 # Stand-in for https://peps.python.org/pep-0673/
 Self = TypeVar("Self", bound="DataclassSchema")

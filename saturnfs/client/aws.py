@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 from xml.etree import ElementTree
-from requests import Response, Session
 
+from requests import Response, Session
 from saturnfs.errors import ExpiredSignature, SaturnError
 
 
@@ -10,6 +10,7 @@ class AWSPresignedClient:
     Handles basic error checking, and detecting
     if a presigned URL has expired.
     """
+
     def __init__(self) -> None:
         self.session = Session()
 

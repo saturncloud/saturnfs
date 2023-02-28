@@ -1,8 +1,7 @@
 from typing import Dict, Optional
 from urllib.parse import urlencode, urljoin
 
-from requests import Response, Session
-
+from requests import Response
 from saturnfs import settings
 from saturnfs.errors import SaturnError
 
@@ -11,7 +10,9 @@ class BaseAPI:
     endpoint = "/"
 
     @classmethod
-    def make_url(cls, subpath: Optional[str] = None, query_args: Optional[Dict[str, Optional[str]]] = None) -> str:
+    def make_url(
+        cls, subpath: Optional[str] = None, query_args: Optional[Dict[str, Optional[str]]] = None
+    ) -> str:
         url = urljoin(settings.SATURN_BASE_URL, cls.endpoint)
         if subpath:
             subpath = subpath.lstrip("/")

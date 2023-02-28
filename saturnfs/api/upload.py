@@ -1,21 +1,14 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from requests import Session
-
 from saturnfs.api.base import BaseAPI
-from saturnfs.schemas.reference import ObjectStorage
-from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStoragePresignedUpload
 
 
 class UploadAPI(BaseAPI):
     endpoint = "/api/object_storage/upload"
 
     @classmethod
-    def start(
-        cls,
-        session: Session,
-        data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def start(cls, session: Session, data: Dict[str, Any]) -> Dict[str, Any]:
         url = cls.make_url()
         response = session.post(url, json=data)
         cls.check_error(response, 200)

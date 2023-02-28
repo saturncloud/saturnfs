@@ -1,7 +1,6 @@
 from typing import Any, Dict
 
 from requests import Session
-
 from saturnfs.api.base import BaseAPI
 
 

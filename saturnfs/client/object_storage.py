@@ -1,26 +1,43 @@
-from typing import Any, Dict, Iterable, List, Optional, Type
+from typing import Iterable, List, Optional
+
 from requests import Session
 from requests.adapters import Retry
-
 from saturnfs import settings
-from saturnfs.api.base import BaseAPI
 from saturnfs.api.copy import CopyAPI
 from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
 from saturnfs.api.list import ListAPI
 from saturnfs.api.upload import UploadAPI
-from saturnfs.schemas.copy import ObjectStorageCompletedCopy, ObjectStorageCopyInfo, ObjectStorageCopyList, ObjectStoragePresignedCopy
+from saturnfs.schemas.copy import (
+    ObjectStorageCompletedCopy,
+    ObjectStorageCopyInfo,
+    ObjectStorageCopyList,
+    ObjectStoragePresignedCopy,
+)
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults
-from saturnfs.schemas.download import ObjectStorageBulkDownload, ObjectStoragePresignedDownload
+from saturnfs.schemas.download import (
+    ObjectStorageBulkDownload,
+    ObjectStoragePresignedDownload,
+)
 from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
-from saturnfs.schemas.reference import BulkObjectStorage, ObjectStorage, ObjectStoragePrefix
-from saturnfs.schemas.upload import ObjectStorageCompletedUpload, ObjectStoragePresignedUpload, ObjectStorageUploadInfo, ObjectStorageUploadList
+from saturnfs.schemas.reference import (
+    BulkObjectStorage,
+    ObjectStorage,
+    ObjectStoragePrefix,
+)
+from saturnfs.schemas.upload import (
+    ObjectStorageCompletedUpload,
+    ObjectStoragePresignedUpload,
+    ObjectStorageUploadInfo,
+    ObjectStorageUploadList,
+)
 
 
 class ObjectStorageClient:
     """
     Manages session and and schemas for the ObjectStorage API
     """
+
     def __init__(
         self,
         retries: int = 10,
@@ -55,9 +72,7 @@ class ObjectStorageClient:
         return ObjectStoragePresignedCopy.load(result)
 
     def list_copies(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageCopyInfo]:
-        result = CopyAPI.list(
-            self.session, **prefix.dump()
-        )
+        result = CopyAPI.list(self.session, **prefix.dump())
         return ObjectStorageCopyList.load(result).copies
 
     def delete_file(self, remote: ObjectStorage):
@@ -97,7 +112,9 @@ class ObjectStorageClient:
             if not last_key:
                 break
 
-    def start_upload(self, destination: ObjectStorage, size: int, part_size: Optional[int] = None) -> ObjectStoragePresignedUpload:
+    def start_upload(
+        self, destination: ObjectStorage, size: int, part_size: Optional[int] = None
+    ) -> ObjectStoragePresignedUpload:
         data = destination.dump()
         data["size"] = size
         if part_size:
@@ -105,7 +122,9 @@ class ObjectStorageClient:
         result = UploadAPI.start(self.session, data)
         return ObjectStoragePresignedUpload.load(result)
 
-    def complete_upload(self, upload_id: str, completed_upload: ObjectStorageCompletedUpload) -> None:
+    def complete_upload(
+        self, upload_id: str, completed_upload: ObjectStorageCompletedUpload
+    ) -> None:
         UploadAPI.complete(self.session, upload_id, completed_upload.dump())
 
     def cancel_upload(self, upload_id: str) -> None:

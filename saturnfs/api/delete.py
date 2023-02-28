@@ -22,11 +22,7 @@ class BulkDeleteAPI(BaseAPI):
     endpoint = "/api/object_storage/bulk_delete"
 
     @classmethod
-    def delete(
-        cls,
-        session: Session,
-        data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def delete(cls, session: Session, data: Dict[str, Any]) -> Dict[str, Any]:
         url = cls.make_url()
         response = session.delete(url, json=data)
         cls.check_error(response, 200)

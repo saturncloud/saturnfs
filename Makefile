@@ -10,3 +10,13 @@ conda-update:
 .PHONY: mypy
 mypy:
 	mypy --config-file mypy.ini ./
+
+.PHONY: pylint
+pylint:
+	pylint saturnfs/
+
+.PHONY: format
+format:
+	@echo -e '\n\nCheck formatting with Black...'
+	black --line-length 100 --exclude '/(\.vscode)/' .
+	isort saturnfs

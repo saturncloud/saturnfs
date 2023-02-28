@@ -1,9 +1,8 @@
 import json
-from re import L
 import sys
 from typing import Optional
-import click
 
+import click
 from saturnfs import settings
 from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
@@ -12,8 +11,12 @@ from saturnfs.errors import PathErrors, SaturnError
 @click.command("cp")
 @click.argument("source_path")
 @click.argument("destination_path")
-@click.option("--part-size", "-p", default=None, help="Max part size for uploading or copying a file")
-@click.option("--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively")
+@click.option(
+    "--part-size", "-p", default=None, help="Max part size for uploading or copying a file"
+)
+@click.option(
+    "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
+)
 def copy(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool):
     sfs = SaturnFS()
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
@@ -32,7 +35,13 @@ def copy(source_path: str, destination_path: str, part_size: Optional[int], recu
 
 @click.command("rm")
 @click.argument("path")
-@click.option("--recursive", "-r", is_flag=True, default=False, help="Delete all files under a prefix recursively")
+@click.option(
+    "--recursive",
+    "-r",
+    is_flag=True,
+    default=False,
+    help="Delete all files under a prefix recursively",
+)
 def delete(path: str, recursive: bool):
     sfs = SaturnFS()
     sfs.delete(path, recursive=recursive)
@@ -42,8 +51,19 @@ def delete(path: str, recursive: bool):
 @click.argument("prefix")
 @click.option("--last-key", "-l", help="Last seen key for pagination")
 @click.option("--max-keys", "-m", help="Maximum number of results to return")
-@click.option("--recursive", "-r", is_flag=True, default=False, help="List all files recursively under the given prefix")
-def list(prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None, recursive: bool = False):
+@click.option(
+    "--recursive",
+    "-r",
+    is_flag=True,
+    default=False,
+    help="List all files recursively under the given prefix",
+)
+def list(
+    prefix: str,
+    last_key: Optional[str] = None,
+    max_keys: Optional[int] = None,
+    recursive: bool = False,
+):
     sfs = SaturnFS()
     if recursive:
         for file in sfs.list_all(prefix):

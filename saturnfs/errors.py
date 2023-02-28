@@ -11,5 +11,7 @@ class ExpiredSignature(SaturnError):
 
 
 class PathErrors:
-    INVALID_REMOTE_PATH = "Invalid remote path. Expected format is sfs://<org_name>/<owner_name>/..."
+    INVALID_REMOTE_PATH = (
+        "Invalid remote path. Expected format is sfs://<org_name>/<owner_name>/..."
+    )
     AT_LEAST_ONE_REMOTE_PATH = "Either source or destination must be a remote path"

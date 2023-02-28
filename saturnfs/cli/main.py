@@ -1,8 +1,9 @@
 import sys
+
 import click
 from saturnfs.api.base import SaturnError
-
 from saturnfs.cli import commands
+
 
 @click.group()
 def cli():

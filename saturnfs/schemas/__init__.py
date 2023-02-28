@@ -1,20 +1,16 @@
-from saturnfs.schemas.copy import (  # noqa
-    ObjectStorageCompletedCopy,
+from saturnfs.schemas.copy import ObjectStorageCompletedCopy  # noqa
+from saturnfs.schemas.copy import (
     ObjectStoragePresignedCopy,
     ObjectStoragePresignedCopyPart,
 )
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults  # noqa
-from saturnfs.schemas.download import (  # noqa
-    ObjectStorageBulkDownload, ObjectStoragePresignedDownload
-)
-from saturnfs.schemas.list import (  # noqa
-    ObjectStorageListResult, ObjectStorageFileDetails, ObjectStorageDirDetails
-)
-from saturnfs.schemas.reference import (  # noqa
-    ObjectStorage, ObjectStoragePrefix
-)
-from saturnfs.schemas.upload import (  # noqa
-    ObjectStorageCompletedUpload,
+from saturnfs.schemas.download import ObjectStorageBulkDownload  # noqa
+from saturnfs.schemas.download import ObjectStoragePresignedDownload
+from saturnfs.schemas.list import ObjectStorageDirDetails  # noqa
+from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
+from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix  # noqa
+from saturnfs.schemas.upload import ObjectStorageCompletedUpload  # noqa
+from saturnfs.schemas.upload import (
     ObjectStorageCompletePart,
     ObjectStoragePresignedPart,
     ObjectStoragePresignedUpload,
