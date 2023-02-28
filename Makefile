@@ -7,16 +7,28 @@ conda-update:
 	conda env update -n saturnfs --file environment.yaml
 	conda env update -n saturnfs --file environment.test.yaml
 
+.PHONY: lint
+lint: black pylint mypy
+
+.PHONY: black
+black:
+	@echo -e '\n\nChecking formatting with Black/ISort...'
+	# If you make changes here, also edit .pre-commit-config.yaml to match
+	black --check --diff ./
+	isort --check ./
+
 .PHONY: mypy
 mypy:
+	@echo -e '\n\nLinting with MyPy'
 	mypy --config-file mypy.ini ./
 
 .PHONY: pylint
 pylint:
-	pylint saturnfs/
+	@echo -e '\n\nLinting with PyLint...'
+	pylint ./
 
 .PHONY: format
 format:
-	@echo -e '\n\nCheck formatting with Black...'
-	black --line-length 100 --exclude '/(\.vscode)/' .
-	isort saturnfs
+	@echo -e '\n\nFormatting with Black/ISort...'
+	black --line-length 100 --exclude '/(\.vscode)/' ./
+	isort ./
