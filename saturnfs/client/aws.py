@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import BinaryIO, Dict, Iterable, Optional
 from xml.etree import ElementTree
 from requests import Response, Session
 
@@ -21,7 +21,7 @@ class AWSPresignedClient:
     def put(
         self,
         url: str,
-        data: Optional[bytes] = None,
+        data: Optional[bytes | BinaryIO] = None,
         headers: Optional[Dict[str, str]] = None,
     ) -> Response:
         response = self.session.put(url, data, headers=headers)

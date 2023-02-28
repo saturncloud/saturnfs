@@ -1,6 +1,7 @@
 from datetime import datetime
+from io import BufferedReader
 import os
-from typing import List, Tuple
+from typing import Iterable, List, Optional, Tuple
 from xml.etree import ElementTree
 
 from saturnfs import settings
@@ -75,12 +76,14 @@ class FileTransferClient:
         self, local_path: str, upload: ObjectStoragePresignedUpload, file_offset: int = 0
     ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         completed_parts: List[ObjectStorageCompletePart] = []
-        with open(local_path, "r") as f:
+        with open(local_path, "rb") as f:
             f.seek(file_offset)
             for part in upload.parts:
-                chunk = f.read(part.size)
+                chunk = FileLimiter(f, part.size)
                 try:
-                    response = self.aws.put(part.url, chunk)
+                    response = self.aws.put(
+                        part.url, chunk, headers={"Content-Type": "application/octet-stream"}
+                    )
                 except ExpiredSignature:
                     return completed_parts, False
 
@@ -184,6 +187,31 @@ class FileTransferClient:
             )
 
         return completed_parts, True
+
+
+class FileLimiter:
+    """
+    File-like object that limits the max number of bytes to be
+    read from the current position of an open file
+    """
+    def __init__(self, file: BufferedReader, max_bytes: int):
+        self.file = file
+        self.max_bytes = max_bytes
+        self.bytes_read = 0
+
+        # Ensures requests will stream this instead of attempting
+        # to treat it as iterable chunks
+        self.len = max_bytes
+
+    def read(self, amount=-1):
+        if self.bytes_read >= self.max_bytes:
+            return b''
+
+        bytes_remaining = self.max_bytes - self.bytes_read
+        data = self.file.read(min(amount, bytes_remaining))
+        self.bytes_read += len(data)
+        return data
+
 
 
 def set_last_modified(local_path: str, last_modified: datetime):
