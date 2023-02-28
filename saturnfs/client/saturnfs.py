@@ -7,6 +7,7 @@ from saturnfs.schemas.copy import ObjectStorageCopyInfo
 from saturnfs.schemas.list import ObjectStorageFileDetails
 from saturnfs.schemas.reference import BulkObjectStorage
 from saturnfs.schemas.upload import ObjectStorageUploadInfo
+from saturnfs.schemas.usage import ObjectStorageUsageResults
 
 
 class SaturnFS:
@@ -95,3 +96,6 @@ class SaturnFS:
 
     def cancel_copy(self, copy_id: str):
         self.object_storage_client.cancel_copy(copy_id)
+
+    def usage(self, org_name: Optional[str] = None, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
+        return self.object_storage_client.usage(org_name, owner_name)

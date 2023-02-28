@@ -27,4 +27,5 @@ if __name__ == "__main__":
     cli.add_command(commands.list_copies)
     cli.add_command(commands.cancel_upload)
     cli.add_command(commands.cancel_copy)
+    cli.add_command(commands.storage_usage)
     entrypoint()

@@ -111,3 +111,12 @@ def exists(path: str):
     click.echo(path_exists)
     if not path_exists:
         sys.exit(1)
+
+
+@click.command("usage")
+@click.option("--org", help="Org name")
+@click.option("--owner", help="Owner name")
+def storage_usage(org: Optional[str], owner: Optional[str]):
+    sfs = SaturnFS()
+    usage = sfs.usage(org, owner)
+    click.echo(json.dumps(usage.dump(), indent=2))

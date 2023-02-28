@@ -8,6 +8,7 @@ from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
 from saturnfs.api.list import ListAPI
 from saturnfs.api.upload import UploadAPI
+from saturnfs.api.usage import UsageAPI
 from saturnfs.schemas.copy import (
     ObjectStorageCompletedCopy,
     ObjectStorageCopyInfo,
@@ -31,6 +32,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadInfo,
     ObjectStorageUploadList,
 )
+from saturnfs.schemas.usage import ObjectStorageUsageResults
 
 
 class ObjectStorageClient:
@@ -137,3 +139,7 @@ class ObjectStorageClient:
     def list_uploads(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageUploadInfo]:
         result = UploadAPI.list(self.session, **prefix.dump())
         return ObjectStorageUploadList.load(result).uploads
+
+    def usage(self, org_name: Optional[str] = None, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
+        result = UsageAPI.get(self.session, org_name=org_name, owner_name=owner_name)
+        return ObjectStorageUsageResults.load(result)
