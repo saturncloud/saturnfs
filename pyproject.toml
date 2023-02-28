@@ -1,0 +1,8 @@
+[tool.black]
+line-length = 100
+exclude = '/(\.vscode|node_modules|\.git)/'
+
+[tool.isort]
+profile = "black"
+src_paths = ["pdc", "tests"]
+auto_identify_namespace_packages = false
