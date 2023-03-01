@@ -45,3 +45,18 @@ class AWSPresignedClient:
                 pass
             return expires is not None
         return False
+
+    def parse_etag(self, response: Response) -> str:
+        etag: Optional[str] = None
+        if "ETag" in response.headers:
+            # upload_part returns etag in header
+            etag = response.headers["ETag"]
+        elif response.headers.get("Content-Type") == "application/xml":
+            # upload_part_copy returns etag in XML response body
+            root = ElementTree.fromstring(response.text)
+            namespace = root.tag.split("}")[0].lstrip("{")
+            etag = root.findtext(f"./{{{namespace}}}ETag")
+
+        if not etag:
+            raise SaturnError("Failed to parse etag from response")
+        return etag

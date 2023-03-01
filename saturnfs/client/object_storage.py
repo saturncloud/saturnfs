@@ -27,6 +27,7 @@ from saturnfs.schemas.reference import (
     ObjectStoragePrefix,
 )
 from saturnfs.schemas.upload import (
+    ObjectStorageCompletePart,
     ObjectStorageCompletedUpload,
     ObjectStoragePresignedUpload,
     ObjectStorageUploadInfo,
@@ -63,7 +64,8 @@ class ObjectStorageClient:
         result = CopyAPI.start(self.session, data)
         return ObjectStoragePresignedCopy.load(result)
 
-    def complete_copy(self, copy_id: str, completed_copy: ObjectStorageCompletedCopy):
+    def complete_copy(self, copy_id: str, completed_parts: List[ObjectStorageCompletePart]):
+        completed_copy = ObjectStorageCompletedCopy(parts=completed_parts)
         CopyAPI.complete(self.session, copy_id, completed_copy.dump())
 
     def cancel_copy(self, copy_id: str):
@@ -84,8 +86,8 @@ class ObjectStorageClient:
         result = BulkDeleteAPI.delete(self.session, bulk.dump())
         return ObjectStorageBulkDeleteResults.load(result)
 
-    def download_file(self, remote: ObjectStorage) -> ObjectStoragePresignedDownload:
-        result = DownloadAPI.get(self.session, remote.dump())
+    def download_file(self, source: ObjectStorage) -> ObjectStoragePresignedDownload:
+        result = DownloadAPI.get(self.session, source.dump())
         return ObjectStoragePresignedDownload.load(result)
 
     def download_bulk(self, bulk: BulkObjectStorage) -> ObjectStorageBulkDownload:
@@ -125,8 +127,9 @@ class ObjectStorageClient:
         return ObjectStoragePresignedUpload.load(result)
 
     def complete_upload(
-        self, upload_id: str, completed_upload: ObjectStorageCompletedUpload
+        self, upload_id: str, completed_parts: List[ObjectStorageCompletePart]
     ) -> None:
+        completed_upload = ObjectStorageCompletedUpload(parts=completed_parts)
         UploadAPI.complete(self.session, upload_id, completed_upload.dump())
 
     def cancel_upload(self, upload_id: str) -> None:
