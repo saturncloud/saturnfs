@@ -1,3 +1,4 @@
+from json import JSONDecodeError
 from typing import Dict, Optional
 from urllib.parse import urlencode, urljoin
 
@@ -25,5 +26,10 @@ class BaseAPI:
     def check_error(cls, response: Response, expected_status: int) -> None:
         if response.status_code != expected_status:
             if response.content:
-                error = response.json()
-                raise SaturnError(error.get("message"))
+                try:
+                    error = response.json()
+                    raise SaturnError(error.get("message"))
+                except JSONDecodeError:
+                    if response.status_code == 404:
+                        raise SaturnError("ObjectStorage is not enabled on this installation")
+                    raise SaturnError(response.text)
