@@ -27,8 +27,8 @@ from saturnfs.schemas.reference import (
     ObjectStoragePrefix,
 )
 from saturnfs.schemas.upload import (
-    ObjectStorageCompletePart,
     ObjectStorageCompletedUpload,
+    ObjectStorageCompletePart,
     ObjectStoragePresignedUpload,
     ObjectStorageUploadInfo,
     ObjectStorageUploadList,
@@ -143,6 +143,8 @@ class ObjectStorageClient:
         result = UploadAPI.list(self.session, **prefix.dump())
         return ObjectStorageUploadList.load(result).uploads
 
-    def usage(self, org_name: Optional[str] = None, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
+    def usage(
+        self, org_name: Optional[str] = None, owner_name: Optional[str] = None
+    ) -> ObjectStorageUsageResults:
         result = UsageAPI.get(self.session, org_name=org_name, owner_name=owner_name)
         return ObjectStorageUsageResults.load(result)

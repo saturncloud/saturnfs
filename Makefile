@@ -12,23 +12,23 @@ lint: black pylint mypy
 
 .PHONY: black
 black:
-	@echo -e '\n\nChecking formatting with Black/ISort...'
+	@echo -e '\nChecking formatting with Black/ISort...'
 	# If you make changes here, also edit .pre-commit-config.yaml to match
 	black --check --diff ./
 	isort --check ./
 
 .PHONY: mypy
 mypy:
-	@echo -e '\n\nLinting with MyPy'
-	mypy --config-file mypy.ini ./
+	@echo -e '\nLinting with MyPy...'
+	mypy --config-file mypy.ini ./saturnfs/
 
 .PHONY: pylint
 pylint:
-	@echo -e '\n\nLinting with PyLint...'
-	pylint ./
+	@echo -e '\nLinting with PyLint...'
+	pylint ./saturnfs/
 
 .PHONY: format
 format:
-	@echo -e '\n\nFormatting with Black/ISort...'
+	@echo -e '\nFormatting with Black/ISort...'
 	black --line-length 100 --exclude '/(\.vscode)/' ./
 	isort ./

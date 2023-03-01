@@ -35,7 +35,7 @@ class FileTransferClient:
                         headers={
                             "Content-Type": "application/octet-stream",
                             "Content-Length": str(part.size),
-                        }
+                        },
                     )
                 except ExpiredSignature:
                     return completed_parts, False

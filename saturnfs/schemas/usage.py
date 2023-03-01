@@ -1,4 +1,5 @@
 from typing import Optional
+
 import marshmallow_dataclass
 from saturnfs.schemas.utils import DataclassSchema
 

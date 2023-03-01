@@ -7,7 +7,7 @@ from saturnfs.schemas import ObjectStorage, ObjectStorageListResult, ObjectStora
 from saturnfs.schemas.copy import ObjectStorageCopyInfo
 from saturnfs.schemas.list import ObjectStorageFileDetails
 from saturnfs.schemas.reference import BulkObjectStorage
-from saturnfs.schemas.upload import ObjectStorageCompletePart, ObjectStorageCompletedUpload, ObjectStorageUploadInfo
+from saturnfs.schemas.upload import ObjectStorageCompletePart, ObjectStorageUploadInfo
 from saturnfs.schemas.usage import ObjectStorageUsageResults
 
 
@@ -74,12 +74,14 @@ class SaturnFS:
                 # Get new presigned URLs and remove parts that have been completed
                 num_parts = len(completed_parts)
                 presigned_upload = self.object_storage_client.resume_upload(upload_id)
-                file_offset = sum(part.size for part in presigned_upload.parts[: num_parts])
-                presigned_upload.parts = presigned_upload.parts[num_parts :]
+                file_offset = sum(part.size for part in presigned_upload.parts[:num_parts])
+                presigned_upload.parts = presigned_upload.parts[num_parts:]
 
         self.object_storage_client.complete_upload(upload_id, completed_parts)
 
-    def _upload_dir(self, local_dir: str, remote_dir: ObjectStoragePrefix, part_size: Optional[int] = None):
+    def _upload_dir(
+        self, local_dir: str, remote_dir: ObjectStoragePrefix, part_size: Optional[int] = None
+    ):
         if not local_dir.endswith("/"):
             local_dir += "/"
 
@@ -92,7 +94,9 @@ class SaturnFS:
             )
             self._upload_file(local_path, destination, part_size)
 
-    def _copy_file(self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None):
+    def _copy_file(
+        self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
+    ):
         presigned_copy = self.object_storage_client.start_copy(source, destination, part_size)
 
         done = False
@@ -102,16 +106,27 @@ class SaturnFS:
             completed_parts.extend(parts)
             if not done:
                 # Get new presigned URLs and remove parts that have been completed
-                presigned_copy = self.object_storage_client.resume_copy(presigned_copy.object_storage_copy_id)
+                presigned_copy = self.object_storage_client.resume_copy(
+                    presigned_copy.object_storage_copy_id
+                )
                 presigned_copy.parts = presigned_copy.parts[len(completed_parts) :]
 
-        self.object_storage_client.complete_copy(presigned_copy.object_storage_copy_id, completed_parts)
+        self.object_storage_client.complete_copy(
+            presigned_copy.object_storage_copy_id, completed_parts
+        )
 
-    def _copy_dir(self, source_dir: ObjectStoragePrefix, destination_dir: ObjectStoragePrefix, part_size: Optional[int] = None):
+    def _copy_dir(
+        self,
+        source_dir: ObjectStoragePrefix,
+        destination_dir: ObjectStoragePrefix,
+        part_size: Optional[int] = None,
+    ):
         for files in self.object_storage_client.list_iter(source_dir):
             for file in files:
                 source = ObjectStorage(
-                    file_path=file.file_path, org_name=source_dir.org_name, owner_name=source_dir.owner_name
+                    file_path=file.file_path,
+                    org_name=source_dir.org_name,
+                    owner_name=source_dir.owner_name,
                 )
                 destination = ObjectStorage(
                     file_path=os.path.join(
@@ -194,7 +209,9 @@ class SaturnFS:
     def cancel_copy(self, copy_id: str):
         self.object_storage_client.cancel_copy(copy_id)
 
-    def usage(self, org_name: Optional[str] = None, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
+    def usage(
+        self, org_name: Optional[str] = None, owner_name: Optional[str] = None
+    ) -> ObjectStorageUsageResults:
         return self.object_storage_client.usage(org_name, owner_name)
 
 
@@ -204,6 +221,7 @@ def relative_path(prefix: Optional[str], file_path: str) -> str:
         if file_path.startswith(dirname):
             return file_path[len(dirname) :]
     return file_path
+
 
 def walk_dir(local_dir: str) -> Iterable[str]:
     for root, _, files in os.walk(local_dir):

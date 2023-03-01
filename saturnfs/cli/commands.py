@@ -17,7 +17,11 @@ def cli():
 @click.argument("source_path", type=str)
 @click.argument("destination_path", type=str)
 @click.option(
-    "--part-size", "-p", type=int, default=None, help="Max part size in bytes for uploading or copying a file in chunks"
+    "--part-size",
+    "-p",
+    type=int,
+    default=None,
+    help="Max part size in bytes for uploading or copying a file in chunks",
 )
 @click.option(
     "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
