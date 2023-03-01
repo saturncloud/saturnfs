@@ -90,7 +90,6 @@ class SaturnFS:
                 org_name=remote_dir.org_name,
                 owner_name=remote_dir.owner_name,
             )
-            print(local_path, "-->", destination.file_path)
             self._upload_file(local_path, destination, part_size)
 
     def _copy_file(self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None):
