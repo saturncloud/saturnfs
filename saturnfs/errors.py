@@ -14,4 +14,7 @@ class PathErrors:
     INVALID_REMOTE_PATH = (
         "Invalid remote path. Expected format is sfs://<org_name>/<owner_name>/..."
     )
+    INVALID_REMOTE_FILE = (
+        "Invalid remote file path. Expected format is sfs://<org_name>/<owner_name>/<file_path>"
+    )
     AT_LEAST_ONE_REMOTE_PATH = "Either source or destination must be a remote path"

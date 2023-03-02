@@ -104,7 +104,7 @@ class ObjectStorageClient:
         result = ListAPI.get(
             self.session, **prefix.dump(), last_key=last_key, max_keys=max_keys, delimited=delimited
         )
-        return ObjectStorageListResult.load(result)
+        return ObjectStorageListResult.load_extended(result, prefix=prefix)
 
     def list_iter(self, prefix: ObjectStoragePrefix) -> Iterable[List[ObjectStorageFileDetails]]:
         last_key: Optional[str] = None

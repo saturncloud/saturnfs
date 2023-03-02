@@ -1,5 +1,7 @@
 import os
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Union
+
+from click._termui_impl import ProgressBar
 
 from saturnfs.client.file_transfer import FileTransferClient
 from saturnfs.client.object_storage import ObjectStorageClient
@@ -10,51 +12,118 @@ from saturnfs.schemas.reference import BulkObjectStorage
 from saturnfs.schemas.upload import ObjectStorageCompletePart, ObjectStorageUploadInfo
 from saturnfs.schemas.usage import ObjectStorageUsageResults
 
+# Remotes describe the org, owner, and complete or partial path to a file (or files)
+# stored in saturn object storage.
+#   e.g. "sfs://org/owner/filepath"
+#
+#   Prefixing strings with "sfs://" is optional in the python client, only required for CLI
+RemoteFile = Union[str, ObjectStorage]
+RemotePrefix = Union[str, ObjectStoragePrefix]
+RemotePath = Union[str, ObjectStorage, ObjectStoragePrefix]
+
 
 class SaturnFS:
     def __init__(self):
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
 
-    def get(self, remote_path: str, local_path: str, recursive: bool = False):
+    def get(self, remote_path: RemotePath, local_path: str, recursive: Optional[bool] = None):
+        if recursive is None:
+            recursive = isinstance(remote_path, ObjectStoragePrefix)
+
         if recursive:
             source_dir = ObjectStoragePrefix.parse(remote_path)
-            self._download_dir(source_dir, local_path)
+            self.download_dir(source_dir, local_path)
         else:
             source = ObjectStorage.parse(remote_path)
-            self._download_file(source, local_path)
+            self.download_file(source, local_path)
 
     def put(
         self,
         local_path: str,
-        remote_path: str,
+        remote_path: RemotePath,
         part_size: Optional[int] = None,
-        recursive: bool = False,
+        recursive: Optional[bool] = None,
     ):
+        if recursive is None:
+            recursive = isinstance(remote_path, ObjectStoragePrefix)
+
         if recursive:
             remote_dir = ObjectStoragePrefix.parse(remote_path)
-            self._upload_dir(local_path, remote_dir, part_size)
+            self.upload_dir(local_path, remote_dir, part_size)
         else:
             destination = ObjectStorage.parse(remote_path)
-            self._upload_file(local_path, destination, part_size)
+            self.upload_file(local_path, destination, part_size)
 
     def copy(
         self,
-        remote_source_path: str,
-        remote_destination_path: str,
+        remote_source_path: RemotePath,
+        remote_destination_path: RemotePath,
         part_size: Optional[int] = None,
-        recursive: bool = False,
+        recursive: Optional[bool] = None,
     ):
+        if recursive is None:
+            recursive = isinstance(remote_source_path, ObjectStoragePrefix)
+
         if recursive:
             source_dir = ObjectStoragePrefix.parse(remote_source_path)
             destination_dir = ObjectStoragePrefix.parse(remote_destination_path)
-            self._copy_dir(source_dir, destination_dir, part_size)
+            self.copy_dir(source_dir, destination_dir, part_size)
         else:
             source = ObjectStorage.parse(remote_source_path)
             destination = ObjectStorage.parse(remote_destination_path)
-            self._copy_file(source, destination, part_size)
+            self.copy_file(source, destination, part_size)
 
-    def _upload_file(
+    def delete(self, remote_path: RemotePath, recursive: Optional[bool] = None):
+        if recursive is None:
+            recursive = isinstance(remote_path, ObjectStoragePrefix)
+
+        if recursive:
+            prefix = ObjectStoragePrefix.parse(remote_path)
+            for files in self.object_storage_client.list_iter(prefix):
+                bulk = BulkObjectStorage(
+                    file_paths=[file.file_path for file in files],
+                    org_name=prefix.org_name,
+                    owner_name=prefix.owner_name,
+                )
+                self.object_storage_client.delete_bulk(bulk)
+        else:
+            remote = ObjectStorage.parse(remote_path)
+            self.object_storage_client.delete_file(remote)
+
+    def list(
+        self, remote_prefix: RemotePrefix, last_key: Optional[str] = None, max_keys: Optional[int] = None
+    ) -> ObjectStorageListResult:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
+        return self.object_storage_client.list(prefix, last_key, max_keys)
+
+    def list_all(self, remote_prefix: RemotePrefix) -> Iterable[ObjectStorageFileDetails]:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
+        for files in self.object_storage_client.list_iter(prefix):
+            for file in files:
+                yield file
+
+    def exists(self, remote_file: RemoteFile) -> bool:
+        file = ObjectStorage.parse(remote_file)
+        prefix = ObjectStoragePrefix(
+            prefix=file.file_path, org_name=file.org_name, owner_name=file.owner_name
+        )
+
+        list_results = self.object_storage_client.list(prefix, max_keys=1)
+        if len(list_results.files) > 0:
+            file_path = list_results.files[0].file_path
+            return file.file_path == file_path
+        return False
+
+    def list_uploads(self, remote_prefix: RemotePrefix) -> List[ObjectStorageUploadInfo]:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
+        return self.object_storage_client.list_uploads(prefix)
+
+    def list_copies(self, remote_prefix: RemotePrefix) -> List[ObjectStorageCopyInfo]:
+        prefix = ObjectStoragePrefix.parse(remote_prefix)
+        return self.object_storage_client.list_copies(prefix)
+
+    def upload_file(
         self, local_path: str, destination: ObjectStorage, part_size: Optional[int] = None
     ):
         size = os.path.getsize(local_path)
@@ -79,22 +148,18 @@ class SaturnFS:
 
         self.object_storage_client.complete_upload(upload_id, completed_parts)
 
-    def _upload_dir(
+    def upload_dir(
         self, local_dir: str, remote_dir: ObjectStoragePrefix, part_size: Optional[int] = None
     ):
         if not local_dir.endswith("/"):
             local_dir += "/"
 
         for local_path in walk_dir(local_dir):
-            local_relative_path = relative_path(local_dir, local_path)
-            destination = ObjectStorage(
-                file_path=os.path.join(remote_dir.prefix or "", local_relative_path),
-                org_name=remote_dir.org_name,
-                owner_name=remote_dir.owner_name,
-            )
-            self._upload_file(local_path, destination, part_size)
+            destination_path = os.path.join(remote_dir.prefix, relative_path(local_dir, local_path))
+            destination = ObjectStorage.parse(remote_dir, file_path=destination_path)
+            self.upload_file(local_path, destination, part_size)
 
-    def _copy_file(
+    def copy_file(
         self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
     ):
         presigned_copy = self.object_storage_client.start_copy(source, destination, part_size)
@@ -115,34 +180,25 @@ class SaturnFS:
             presigned_copy.object_storage_copy_id, completed_parts
         )
 
-    def _copy_dir(
+    def copy_dir(
         self,
         source_dir: ObjectStoragePrefix,
         destination_dir: ObjectStoragePrefix,
         part_size: Optional[int] = None,
     ):
-        for files in self.object_storage_client.list_iter(source_dir):
-            for file in files:
-                source = ObjectStorage(
-                    file_path=file.file_path,
-                    org_name=source_dir.org_name,
-                    owner_name=source_dir.owner_name,
-                )
-                destination = ObjectStorage(
-                    file_path=os.path.join(
-                        destination_dir.prefix or "",
-                        relative_path(source_dir.prefix, file.file_path),
-                    ),
-                    org_name=destination_dir.org_name,
-                    owner_name=destination_dir.owner_name,
-                )
-                self._copy_file(source, destination, part_size)
+        for file in self.list_all(source_dir):
+            destination_path = os.path.join(
+                destination_dir.prefix,
+                relative_path(source_dir.prefix, file.file_path),
+            )
+            destination = ObjectStorage.parse(destination_dir, file_path=destination_path)
+            self.copy_file(file, destination, part_size)
 
-    def _download_file(self, source: ObjectStorage, local_path: str):
+    def download_file(self, source: ObjectStorage, local_path: str):
         presigned_download = self.object_storage_client.download_file(source)
         self.file_transfer.download(presigned_download, local_path)
 
-    def _download_dir(self, source_dir: ObjectStoragePrefix, local_dir: str):
+    def download_dir(self, source_dir: ObjectStoragePrefix, local_dir: str):
         for files in self.object_storage_client.list_iter(source_dir):
             bulk = BulkObjectStorage(
                 file_paths=[file.file_path for file in files],
@@ -156,52 +212,6 @@ class SaturnFS:
                     local_dir, relative_path(source_dir.prefix, presigned_download.file_path)
                 )
                 self.file_transfer.download(presigned_download, local_path)
-
-    def delete(self, remote_path: str, recursive: bool = False):
-        if not recursive:
-            remote = ObjectStorage.parse(remote_path)
-            self.object_storage_client.delete_file(remote)
-        else:
-            prefix = ObjectStoragePrefix.parse(remote_path)
-            for files in self.object_storage_client.list_iter(prefix):
-                bulk = BulkObjectStorage(
-                    file_paths=[file.file_path for file in files],
-                    org_name=prefix.org_name,
-                    owner_name=prefix.owner_name,
-                )
-                self.object_storage_client.delete_bulk(bulk)
-
-    def list(
-        self, remote_prefix: str, last_key: Optional[str] = None, max_keys: Optional[int] = None
-    ) -> ObjectStorageListResult:
-        prefix = ObjectStoragePrefix.parse(remote_prefix)
-        return self.object_storage_client.list(prefix, last_key, max_keys)
-
-    def list_all(self, remote_prefix: str) -> Iterable[ObjectStorageFileDetails]:
-        prefix = ObjectStoragePrefix.parse(remote_prefix)
-        for files in self.object_storage_client.list_iter(prefix):
-            for file in files:
-                yield file
-
-    def exists(self, remote_path: str) -> bool:
-        file = ObjectStorage.parse(remote_path)
-        prefix = ObjectStoragePrefix(
-            prefix=file.file_path, org_name=file.org_name, owner_name=file.owner_name
-        )
-
-        list_results = self.object_storage_client.list(prefix, max_keys=1)
-        if len(list_results.files) > 0:
-            file_path = list_results.files[0].file_path
-            return file.file_path == file_path
-        return False
-
-    def list_uploads(self, remote_prefix: str) -> List[ObjectStorageUploadInfo]:
-        prefix = ObjectStoragePrefix.parse(remote_prefix)
-        return self.object_storage_client.list_uploads(prefix)
-
-    def list_copies(self, remote_prefix: str) -> List[ObjectStorageCopyInfo]:
-        prefix = ObjectStoragePrefix.parse(remote_prefix)
-        return self.object_storage_client.list_copies(prefix)
 
     def cancel_upload(self, upload_id: str):
         self.object_storage_client.cancel_upload(upload_id)

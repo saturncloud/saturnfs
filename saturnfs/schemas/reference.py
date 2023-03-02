@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import marshmallow_dataclass
 from saturnfs import settings
@@ -15,24 +15,42 @@ class ObjectStorage(DataclassSchema):
     owner_name: str
 
     @classmethod
-    def parse(cls, remote_path: str) -> ObjectStorage:
+    def parse(cls, remote_path: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str) -> ObjectStorage:
         org_name, owner_name, file_path = parse_remote(remote_path)
-        if not file_path:
-            raise SaturnError(PathErrors.INVALID_REMOTE_PATH)
+        data = {
+            "org_name": org_name,
+            "owner_name": owner_name,
+            "file_path": file_path,
+            **override,
+        }
+        if not data.get("file_path"):
+            raise SaturnError(PathErrors.INVALID_REMOTE_FILE)
 
-        return cls(file_path=file_path, org_name=org_name, owner_name=owner_name)
+        return cls(**data)
+
+    def __str__(self) -> str:
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.file_path}"
 
 
 @marshmallow_dataclass.dataclass
 class ObjectStoragePrefix(DataclassSchema):
+    prefix: str
     org_name: str
     owner_name: str
-    prefix: Optional[str] = None
 
     @classmethod
-    def parse(cls, remote_prefix: str) -> ObjectStoragePrefix:
+    def parse(cls, remote_prefix: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str) -> ObjectStoragePrefix:
         org_name, owner_name, prefix = parse_remote(remote_prefix)
-        return cls(org_name=org_name, owner_name=owner_name, prefix=prefix)
+        data = {
+            "org_name": org_name,
+            "owner_name": owner_name,
+            "prefix": prefix,
+            **override,
+        }
+        return cls(**data)
+
+    def __str__(self) -> str:
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.prefix}"
 
 
 @marshmallow_dataclass.dataclass
@@ -42,23 +60,35 @@ class BulkObjectStorage(DataclassSchema):
     owner_name: str
 
 
-def parse_remote(path: str) -> Tuple[str, str, str]:
-    owner_name: Optional[str] = None
-    org_name: Optional[str] = None
+def parse_remote(path: Union[str, ObjectStorage, ObjectStoragePrefix]) -> Tuple[str, str, str]:
+    """
+    Convert any remote reference into a tuple of strings (<org_name>, <owner_name>, <path>)
+    """
+    if isinstance(path, str):
+        if path.startswith(settings.SATURNFS_FILE_PREFIX):
+            # Strip sfs://
+            path = path[len(settings.SATURNFS_FILE_PREFIX) :]
+        elif path.startswith("/"):
+            # Allow /org/owner/...
+            path = path[1:]
 
-    if path.startswith(settings.SATURNFS_FILE_PREFIX):
-        path = path[len(settings.SATURNFS_FILE_PREFIX) :]
-    path = path.lstrip("/")
+        path_split = path.split("/", 2)
+        if len(path_split) < 2 or not all(path_split[:2]):
+            raise SaturnError(PathErrors.INVALID_REMOTE_PATH)
 
-    path_split = path.split("/", 2)
-    if len(path_split) < 2 or path_split[1] == "":
-        raise SaturnError(PathErrors.INVALID_REMOTE_PATH)
-
-    org_name = path_split[0]
-    owner_name = path_split[1]
-    if len(path_split) < 3:
-        path = ""
+        org_name = path_split[0]
+        owner_name = path_split[1]
+        if len(path_split) < 3:
+            path = ""
+        else:
+            path = path_split[2]
+    elif isinstance(path, ObjectStorage):
+        org_name = path.org_name
+        owner_name = path.owner_name
+        path = path.file_path
     else:
-        path = path_split[2]
+        org_name = path.org_name
+        owner_name = path.owner_name
+        path = path.prefix
 
     return (org_name, owner_name, path)
