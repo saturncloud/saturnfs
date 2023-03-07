@@ -15,7 +15,9 @@ class ObjectStorage(DataclassSchema):
     owner_name: str
 
     @classmethod
-    def parse(cls, remote_path: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str) -> ObjectStorage:
+    def parse(
+        cls, remote_path: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str
+    ) -> ObjectStorage:
         org_name, owner_name, file_path = parse_remote(remote_path)
         data = {
             "org_name": org_name,
@@ -42,7 +44,9 @@ class ObjectStoragePrefix(DataclassSchema):
     owner_name: str
 
     @classmethod
-    def parse(cls, remote_prefix: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str) -> ObjectStoragePrefix:
+    def parse(
+        cls, remote_prefix: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str
+    ) -> ObjectStoragePrefix:
         org_name, owner_name, prefix = parse_remote(remote_prefix)
         data = {
             "org_name": org_name,

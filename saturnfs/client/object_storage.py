@@ -35,7 +35,6 @@ from saturnfs.schemas.upload import (
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
 
-
 dump_only = ["org_name", "owner_name", "file_path"]
 
 
@@ -105,7 +104,11 @@ class ObjectStorageClient:
         delimited: bool = True,
     ) -> ObjectStorageListResult:
         result = ListAPI.get(
-            self.session, **prefix.dump_ref(), last_key=last_key, max_keys=max_keys, delimited=delimited
+            self.session,
+            **prefix.dump_ref(),
+            last_key=last_key,
+            max_keys=max_keys,
+            delimited=delimited,
         )
         return ObjectStorageListResult.load_extended(result, prefix=prefix)
 

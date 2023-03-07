@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import os
 from dataclasses import field
 from datetime import datetime
-import os
 from typing import Any, Dict, List, Optional
 
 import marshmallow_dataclass
@@ -32,6 +32,7 @@ class ObjectStorageFileDetails(ObjectStorage):
     Extends ObjectStorage so that list results may be referenced
     directory for download, copy, etc.
     """
+
     file_path: str
     size: int
     updated_at: datetime
@@ -49,6 +50,7 @@ class ObjectStorageDirDetails(ObjectStoragePrefix):
     Extends ObjectStoragePrefix so that list results may be referenced
     directly for listing subdirectories, download_dir, copy_dir, etc.
     """
+
     prefix: str
 
     # Not returned from API, added during load

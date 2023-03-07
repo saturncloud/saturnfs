@@ -28,10 +28,10 @@ def cli():
 @click.option(
     "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
 )
-@click.option(
-    "--quiet", "-q", is_flag=True, default=False, help="Do not print file operations"
-)
-def copy(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool):
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Do not print file operations")
+def copy(
+    source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool
+):
     sfs = SaturnFS(verbose=(not quiet))
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
@@ -60,10 +60,10 @@ def copy(source_path: str, destination_path: str, part_size: Optional[int], recu
 @click.option(
     "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
 )
-@click.option(
-    "--quiet", "-q", is_flag=True, default=False, help="Do not print file operations"
-)
-def move(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool):
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Do not print file operations")
+def move(
+    source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool
+):
     sfs = SaturnFS(verbose=(not quiet))
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)

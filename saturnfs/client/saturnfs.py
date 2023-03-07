@@ -1,9 +1,8 @@
 import os
 from typing import Iterable, List, Optional, Union
+
 import click
-
 from click._termui_impl import ProgressBar
-
 from saturnfs.client.file_transfer import FileTransferClient
 from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.schemas import ObjectStorage, ObjectStorageListResult, ObjectStoragePrefix
@@ -91,7 +90,6 @@ class SaturnFS:
         )
         self.delete(remote_source_path, recursive=recursive)
 
-
     def delete(self, remote_path: RemotePath, recursive: Optional[bool] = None):
         if recursive is None:
             recursive = isinstance(remote_path, ObjectStoragePrefix)
@@ -110,7 +108,10 @@ class SaturnFS:
             self.object_storage_client.delete_file(remote)
 
     def list(
-        self, remote_prefix: RemotePrefix, last_key: Optional[str] = None, max_keys: Optional[int] = None
+        self,
+        remote_prefix: RemotePrefix,
+        last_key: Optional[str] = None,
+        max_keys: Optional[int] = None,
     ) -> ObjectStorageListResult:
         prefix = ObjectStoragePrefix.parse(remote_prefix)
         return self.object_storage_client.list(prefix, last_key, max_keys)
@@ -269,5 +270,7 @@ def walk_dir(local_dir: str) -> Iterable[str]:
             yield os.path.join(root, file)
 
 
-def print_file_op(op: str, source: Union[str, ObjectStorage], destination: Union[str, ObjectStorage]):
+def print_file_op(
+    op: str, source: Union[str, ObjectStorage], destination: Union[str, ObjectStorage]
+):
     click.echo(f"{op}: {source} to {destination}")
