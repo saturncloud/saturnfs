@@ -1,5 +1,5 @@
 import json
-from typing import Any, ClassVar, Dict, Type, TypeVar, Union
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Type, TypeVar, Union
 
 from marshmallow import EXCLUDE
 from marshmallow import Schema as BaseSchema
@@ -29,5 +29,5 @@ class DataclassSchema:
         except json.JSONDecodeError as e:
             raise SaturnError("Invalid JSON body") from e
 
-    def dump(self) -> Dict[str, Any]:
-        return self.Schema().dump(self)
+    def dump(self, only: Optional[List[str]] = None) -> Dict[str, Any]:
+        return self.Schema(only=only).dump(self)

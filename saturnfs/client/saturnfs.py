@@ -74,6 +74,22 @@ class SaturnFS:
             destination = ObjectStorage.parse(remote_destination_path)
             self.copy_file(source, destination, part_size)
 
+    def move(
+        self,
+        remote_source_path: RemotePath,
+        remote_destination_path: RemotePath,
+        part_size: Optional[int] = None,
+        recursive: Optional[bool] = None,
+    ):
+        if recursive is None:
+            recursive = isinstance(remote_source_path, ObjectStoragePrefix)
+
+        self.copy(
+            remote_source_path, remote_destination_path, part_size=part_size, recursive=recursive
+        )
+        self.delete(remote_source_path, recursive=recursive)
+
+
     def delete(self, remote_path: RemotePath, recursive: Optional[bool] = None):
         if recursive is None:
             recursive = isinstance(remote_path, ObjectStoragePrefix)

@@ -36,6 +36,9 @@ from saturnfs.schemas.upload import (
 from saturnfs.schemas.usage import ObjectStorageUsageResults
 
 
+dump_only = ["org_name", "owner_name", "file_path"]
+
+
 class ObjectStorageClient:
     """
     Manages session and and schemas for the ObjectStorage API
@@ -56,8 +59,8 @@ class ObjectStorageClient:
         self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
     ) -> ObjectStoragePresignedCopy:
         data = {
-            "source": source.dump(),
-            "destination": destination.dump(),
+            "source": source.dump_ref(),
+            "destination": destination.dump_ref(),
         }
         if part_size is not None:
             data["destination"]["part_size"] = part_size
@@ -76,18 +79,18 @@ class ObjectStorageClient:
         return ObjectStoragePresignedCopy.load(result)
 
     def list_copies(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageCopyInfo]:
-        result = CopyAPI.list(self.session, **prefix.dump())
+        result = CopyAPI.list(self.session, **prefix.dump_ref())
         return ObjectStorageCopyList.load(result).copies
 
     def delete_file(self, remote: ObjectStorage):
-        DeleteAPI.delete(self.session, remote.dump())
+        DeleteAPI.delete(self.session, remote.dump_ref())
 
     def delete_bulk(self, bulk: BulkObjectStorage):
         result = BulkDeleteAPI.delete(self.session, bulk.dump())
         return ObjectStorageBulkDeleteResults.load(result)
 
     def download_file(self, source: ObjectStorage) -> ObjectStoragePresignedDownload:
-        result = DownloadAPI.get(self.session, source.dump())
+        result = DownloadAPI.get(self.session, source.dump_ref())
         return ObjectStoragePresignedDownload.load(result)
 
     def download_bulk(self, bulk: BulkObjectStorage) -> ObjectStorageBulkDownload:
@@ -102,7 +105,7 @@ class ObjectStorageClient:
         delimited: bool = True,
     ) -> ObjectStorageListResult:
         result = ListAPI.get(
-            self.session, **prefix.dump(), last_key=last_key, max_keys=max_keys, delimited=delimited
+            self.session, **prefix.dump_ref(), last_key=last_key, max_keys=max_keys, delimited=delimited
         )
         return ObjectStorageListResult.load_extended(result, prefix=prefix)
 
@@ -119,7 +122,7 @@ class ObjectStorageClient:
     def start_upload(
         self, destination: ObjectStorage, size: int, part_size: Optional[int] = None
     ) -> ObjectStoragePresignedUpload:
-        data = destination.dump()
+        data = destination.dump_ref()
         data["size"] = size
         if part_size:
             data["part_size"] = part_size

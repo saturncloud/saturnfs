@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import sys
 from typing import Optional
 
@@ -41,6 +42,40 @@ def copy(source_path: str, destination_path: str, part_size: Optional[int], recu
         sfs.get(source_path, destination_path, recursive)
     else:
         sfs.copy(source_path, destination_path, part_size, recursive)
+
+
+@cli.command("mv")
+@click.argument("source_path", type=str)
+@click.argument("destination_path", type=str)
+@click.option(
+    "--part-size",
+    "-p",
+    type=int,
+    default=None,
+    help="Max part size in bytes for uploading or copying a file in chunks",
+)
+@click.option(
+    "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
+)
+def move(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool):
+    sfs = SaturnFS()
+    src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
+    dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
+
+    if src_is_local and dst_is_local:
+        raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
+
+    if src_is_local:
+        sfs.put(source_path, destination_path, part_size=part_size, recursive=recursive)
+        if recursive:
+            shutil.rmtree(source_path)
+        else:
+            os.remove(source_path)
+    elif dst_is_local:
+        sfs.get(source_path, destination_path, recursive=recursive)
+        sfs.delete(source_path, recursive=recursive)
+    else:
+        sfs.move(source_path, destination_path, part_size=part_size, recursive=recursive)
 
 
 @cli.command("rm")

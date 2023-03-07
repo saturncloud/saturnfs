@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import marshmallow_dataclass
 from saturnfs import settings
@@ -28,6 +28,9 @@ class ObjectStorage(DataclassSchema):
 
         return cls(**data)
 
+    def dump_ref(self) -> Dict[str, Any]:
+        return self.dump(only=["org_name", "owner_name", "file_path"])
+
     def __str__(self) -> str:
         return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.file_path}"
 
@@ -48,6 +51,9 @@ class ObjectStoragePrefix(DataclassSchema):
             **override,
         }
         return cls(**data)
+
+    def dump_ref(self) -> Dict[str, Any]:
+        return self.dump(only=["org_name", "owner_name", "prefix"])
 
     def __str__(self) -> str:
         return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.prefix}"
