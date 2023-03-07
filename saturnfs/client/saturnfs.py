@@ -1,5 +1,6 @@
 import os
 from typing import Iterable, List, Optional, Union
+import click
 
 from click._termui_impl import ProgressBar
 
@@ -23,7 +24,8 @@ RemotePath = Union[str, ObjectStorage, ObjectStoragePrefix]
 
 
 class SaturnFS:
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
+        self.verbose = verbose
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
 
@@ -142,6 +144,9 @@ class SaturnFS:
     def upload_file(
         self, local_path: str, destination: ObjectStorage, part_size: Optional[int] = None
     ):
+        if self.verbose:
+            print_file_op("upload", local_path, destination)
+
         size = os.path.getsize(local_path)
         if part_size is not None and part_size > size:
             part_size = size
@@ -178,6 +183,9 @@ class SaturnFS:
     def copy_file(
         self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
     ):
+        if self.verbose:
+            print_file_op("copy", source, destination)
+
         presigned_copy = self.object_storage_client.start_copy(source, destination, part_size)
 
         done = False
@@ -211,6 +219,9 @@ class SaturnFS:
             self.copy_file(file, destination, part_size)
 
     def download_file(self, source: ObjectStorage, local_path: str):
+        if self.verbose:
+            print_file_op("download", source, local_path)
+
         presigned_download = self.object_storage_client.download_file(source)
         self.file_transfer.download(presigned_download, local_path)
 
@@ -227,6 +238,9 @@ class SaturnFS:
                 local_path = os.path.join(
                     local_dir, relative_path(source_dir.prefix, presigned_download.file_path)
                 )
+                if self.verbose:
+                    source = ObjectStorage.parse(source_dir, file_path=presigned_download.file_path)
+                    print_file_op("download", source, local_path)
                 self.file_transfer.download(presigned_download, local_path)
 
     def cancel_upload(self, upload_id: str):
@@ -253,3 +267,7 @@ def walk_dir(local_dir: str) -> Iterable[str]:
     for root, _, files in os.walk(local_dir):
         for file in files:
             yield os.path.join(root, file)
+
+
+def print_file_op(op: str, source: Union[str, ObjectStorage], destination: Union[str, ObjectStorage]):
+    click.echo(f"{op}: {source} to {destination}")
