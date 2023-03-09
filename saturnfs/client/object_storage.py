@@ -112,12 +112,14 @@ class ObjectStorageClient:
         )
         return ObjectStorageListResult.load_extended(result, prefix=prefix)
 
-    def list_iter(self, prefix: ObjectStoragePrefix) -> Iterable[List[ObjectStorageFileDetails]]:
+    def list_iter(
+        self, prefix: ObjectStoragePrefix, delimited: bool = True
+    ) -> Iterable[ObjectStorageListResult]:
         last_key: Optional[str] = None
         while True:
-            list_results = self.list(prefix, last_key, delimited=False)
+            list_results = self.list(prefix, last_key, delimited=delimited)
             last_key = list_results.next_last_key
-            yield list_results.files
+            yield list_results
 
             if not last_key:
                 break
@@ -141,8 +143,14 @@ class ObjectStorageClient:
     def cancel_upload(self, upload_id: str) -> None:
         UploadAPI.cancel(self.session, upload_id)
 
-    def resume_upload(self, upload_id: str) -> ObjectStoragePresignedUpload:
-        result = UploadAPI.resume(self.session, upload_id)
+    def resume_upload(
+        self,
+        upload_id: str,
+        first_part: Optional[int] = None,
+        last_part: Optional[int] = None,
+        last_part_size: Optional[int] = None,
+    ) -> ObjectStoragePresignedUpload:
+        result = UploadAPI.resume(self.session, upload_id, first_part, last_part, last_part_size)
         return ObjectStoragePresignedUpload.load(result)
 
     def list_uploads(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageUploadInfo]:

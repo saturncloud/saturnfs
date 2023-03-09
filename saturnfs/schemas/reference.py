@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import marshmallow_dataclass
 from saturnfs import settings
 from saturnfs.errors import PathErrors, SaturnError
-from saturnfs.schemas.utils import DataclassSchema
+from saturnfs.schemas.base import DataclassSchema
 
 
 @marshmallow_dataclass.dataclass
@@ -34,7 +34,7 @@ class ObjectStorage(DataclassSchema):
         return self.dump(only=["org_name", "owner_name", "file_path"])
 
     def __str__(self) -> str:
-        return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.file_path}"
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
 
 
 @marshmallow_dataclass.dataclass
@@ -60,7 +60,7 @@ class ObjectStoragePrefix(DataclassSchema):
         return self.dump(only=["org_name", "owner_name", "prefix"])
 
     def __str__(self) -> str:
-        return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.prefix}"
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
 
 
 @marshmallow_dataclass.dataclass

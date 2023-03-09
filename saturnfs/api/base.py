@@ -28,10 +28,12 @@ class BaseAPI:
             if response.content:
                 try:
                     error = response.json()
-                    raise SaturnError(error.get("message"))
+                    raise SaturnError(error.get("message"), response.status_code)
                 except JSONDecodeError:
                     if response.status_code == 404:
                         raise SaturnError(  # pylint: disable=raise-missing-from
-                            "ObjectStorage is not enabled on this installation"
+                            "ObjectStorage is not enabled on this installation", response.status_code
                         )
-                    raise SaturnError(response.text)  # pylint: disable=raise-missing-from
+                    raise SaturnError(
+                        response.text, response.status_code
+                    )  # pylint: disable=raise-missing-from

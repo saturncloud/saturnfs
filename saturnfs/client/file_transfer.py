@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import BinaryIO, List, Tuple
+from typing import Any, BinaryIO, List, Optional, Tuple
 
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
@@ -10,6 +10,7 @@ from saturnfs.schemas import (
     ObjectStoragePresignedDownload,
     ObjectStoragePresignedUpload,
 )
+from saturnfs.schemas.upload import ObjectStoragePresignedPart
 
 
 class FileTransferClient:
@@ -29,22 +30,22 @@ class FileTransferClient:
             for part in presigned_upload.parts:
                 chunk = FileLimiter(f, part.size)
                 try:
-                    response = self.aws.put(
-                        part.url,
-                        chunk,
-                        headers={
-                            "Content-Type": "application/octet-stream",
-                            "Content-Length": str(part.size),
-                        },
-                    )
+                    completed_parts.append(self.upload_part(chunk, part))
                 except ExpiredSignature:
                     return completed_parts, False
-
-                etag = self.aws.parse_etag(response)
-                completed_parts.append(
-                    ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
-                )
         return completed_parts, True
+
+    def upload_part(self, data: Any, part: ObjectStoragePresignedPart) -> ObjectStorageCompletePart:
+        response = self.aws.put(
+            part.url,
+            data,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(part.size),
+            },
+        )
+        etag = self.aws.parse_etag(response)
+        return ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
 
     def copy(self, presigned_copy: ObjectStoragePresignedCopy):
         completed_parts: List[ObjectStorageCompletePart] = []

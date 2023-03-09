@@ -1,13 +1,14 @@
 class SaturnError(Exception):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, status: int = 400) -> None:
         self.message = message
+        self.status = status
         super().__init__(message)
 
 
 class ExpiredSignature(SaturnError):
     def __init__(self) -> None:
         self.message = "Presigned URL has expired"
-        super().__init__(self.message)
+        super().__init__(self.message, status=401)
 
 
 class PathErrors:
