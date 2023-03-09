@@ -1,16 +1,23 @@
 from __future__ import annotations
+from dataclasses import field
 
 from datetime import datetime
-from typing import List
+from typing import Dict, List, Optional
 
 import marshmallow_dataclass
 from saturnfs.schemas.base import DataclassSchema
+from saturnfs.schemas.reference import ObjectStorage
 
 
 @marshmallow_dataclass.dataclass
 class ObjectStoragePresignedUpload(DataclassSchema):
     object_storage_upload_id: str
-    parts: List[ObjectStoragePresignedPart]
+    is_copy: bool = False
+    parts: List[ObjectStoragePresignedPart] = field(default_factory=list)
+
+    @property
+    def upload_id(self) -> str:
+        return self.object_storage_upload_id
 
 
 @marshmallow_dataclass.dataclass
@@ -18,6 +25,7 @@ class ObjectStoragePresignedPart(DataclassSchema):
     url: str
     part_number: int
     size: int
+    headers: Dict[str, str] = field(default_factory=dict)
 
 
 @marshmallow_dataclass.dataclass
@@ -40,6 +48,7 @@ class ObjectStorageUploadList(DataclassSchema):
 class ObjectStorageUploadInfo(DataclassSchema):
     id: str
     file_path: str
-    size: int
+    size: Optional[int]
     part_size: int
     expires_at: datetime
+    copy_source: Optional[ObjectStorage] = None

@@ -43,9 +43,6 @@ class ObjectStorageFileDetails(ObjectStorage):
     owner_name: str = field(metadata={"load_only": True})
     type: Literal["file"] = field(default="file", metadata={"dump_only": True})
 
-    class Meta:
-        ordered = True
-
     @property
     def is_dir(self) -> Literal[False]:
         return False
@@ -74,9 +71,6 @@ class ObjectStorageDirDetails(ObjectStoragePrefix):
     size: Literal[0] = field(default=0, metadata={"dump_only": True})
     created_at: Literal[None] = field(default=None, metadata={"dump_only": True})
     updated_at: Literal[None] = field(default=None, metadata={"dump_only": True})
-
-    class Meta:
-        ordered = True
 
     @property
     def is_dir(self) -> Literal[True]:

@@ -113,7 +113,7 @@ def list(
 ):
     sfs = SaturnFS()
     result = sfs.ls(prefix, detail=True, recursive=recursive)
-    click.echo(json.dumps([remote.dump_extended() for remote in result]))
+    click.echo(json.dumps([remote.dump_extended() for remote in result], indent=2))
 
 
 @cli.command("list-uploads")
@@ -124,26 +124,11 @@ def list_uploads(prefix: str):
     click.echo(json.dumps([upload.dump() for upload in uploads], indent=2))
 
 
-@cli.command("list-copies")
-@click.argument("prefix", type=str)
-def list_copies(prefix: str):
-    sfs = SaturnFS()
-    copies = sfs.list_copies(prefix)
-    click.echo(json.dumps([copy.dump() for copy in copies], indent=2))
-
-
 @cli.command("cancel-upload")
 @click.argument("upload_id", type=str)
 def cancel_upload(upload_id: str):
     sfs = SaturnFS()
     sfs.cancel_upload(upload_id)
-
-
-@cli.command("cancel-copy")
-@click.argument("copy_id", type=str)
-def cancel_copy(copy_id: str):
-    sfs = SaturnFS()
-    sfs.cancel_copy(copy_id)
 
 
 @cli.command("exists")

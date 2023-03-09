@@ -1,8 +1,3 @@
-from saturnfs.schemas.copy import ObjectStorageCompletedCopy  # noqa
-from saturnfs.schemas.copy import (
-    ObjectStoragePresignedCopy,
-    ObjectStoragePresignedCopyPart,
-)
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults  # noqa
 from saturnfs.schemas.download import ObjectStorageBulkDownload  # noqa
 from saturnfs.schemas.download import ObjectStoragePresignedDownload

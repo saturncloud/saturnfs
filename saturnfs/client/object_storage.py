@@ -3,24 +3,17 @@ from typing import Iterable, List, Optional
 from requests import Session
 from requests.adapters import Retry
 from saturnfs import settings
-from saturnfs.api.copy import CopyAPI
 from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
 from saturnfs.api.list import ListAPI
 from saturnfs.api.upload import UploadAPI
 from saturnfs.api.usage import UsageAPI
-from saturnfs.schemas.copy import (
-    ObjectStorageCompletedCopy,
-    ObjectStorageCopyInfo,
-    ObjectStorageCopyList,
-    ObjectStoragePresignedCopy,
-)
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults
 from saturnfs.schemas.download import (
     ObjectStorageBulkDownload,
     ObjectStoragePresignedDownload,
 )
-from saturnfs.schemas.list import ObjectStorageFileDetails, ObjectStorageListResult
+from saturnfs.schemas.list import ObjectStorageListResult
 from saturnfs.schemas.reference import (
     BulkObjectStorage,
     ObjectStorage,
@@ -54,32 +47,45 @@ class ObjectStorageClient:
         self.session.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
         self.session.mount("http", retry)  # type: ignore[arg-type]
 
-    def start_copy(
-        self, source: ObjectStorage, destination: ObjectStorage, part_size: Optional[int] = None
-    ) -> ObjectStoragePresignedCopy:
-        data = {
-            "source": source.dump_ref(),
-            "destination": destination.dump_ref(),
-        }
-        if part_size is not None:
-            data["destination"]["part_size"] = part_size
-        result = CopyAPI.start(self.session, data)
-        return ObjectStoragePresignedCopy.load(result)
+    def start_upload(
+        self,
+        destination: ObjectStorage,
+        size: Optional[int] = None,
+        part_size: Optional[int] = None,
+        copy_source: Optional[ObjectStorage] = None,
+    ) -> ObjectStoragePresignedUpload:
+        data = destination.dump_ref()
+        if size is not None:
+            data["size"] = size
+        if part_size:
+            data["part_size"] = part_size
+        if copy_source:
+            data["copy_source"] = copy_source.dump_ref()
+        result = UploadAPI.start(self.session, data)
+        return ObjectStoragePresignedUpload.load(result)
 
-    def complete_copy(self, copy_id: str, completed_parts: List[ObjectStorageCompletePart]):
-        completed_copy = ObjectStorageCompletedCopy(parts=completed_parts)
-        CopyAPI.complete(self.session, copy_id, completed_copy.dump())
+    def complete_upload(
+        self, upload_id: str, completed_parts: List[ObjectStorageCompletePart]
+    ) -> None:
+        completed_upload = ObjectStorageCompletedUpload(parts=completed_parts)
+        UploadAPI.complete(self.session, upload_id, completed_upload.dump())
 
-    def cancel_copy(self, copy_id: str):
-        CopyAPI.cancel(self.session, copy_id)
+    def cancel_upload(self, upload_id: str) -> None:
+        UploadAPI.cancel(self.session, upload_id)
 
-    def resume_copy(self, copy_id: str):
-        result = CopyAPI.resume(self.session, copy_id)
-        return ObjectStoragePresignedCopy.load(result)
+    def resume_upload(
+        self,
+        upload_id: str,
+        first_part: Optional[int] = None,
+        last_part: Optional[int] = None,
+        last_part_size: Optional[int] = None,
+    ) -> ObjectStoragePresignedUpload:
+        result = UploadAPI.resume(self.session, upload_id, first_part, last_part, last_part_size)
+        return ObjectStoragePresignedUpload.load(result)
 
-    def list_copies(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageCopyInfo]:
-        result = CopyAPI.list(self.session, **prefix.dump_ref())
-        return ObjectStorageCopyList.load(result).copies
+    def list_uploads(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageUploadInfo]:
+        result = UploadAPI.list(self.session, **prefix.dump())
+        return ObjectStorageUploadList.load(result).uploads
 
     def delete_file(self, remote: ObjectStorage):
         DeleteAPI.delete(self.session, remote.dump_ref())
@@ -123,40 +129,6 @@ class ObjectStorageClient:
 
             if not last_key:
                 break
-
-    def start_upload(
-        self, destination: ObjectStorage, size: Optional[int], part_size: Optional[int] = None
-    ) -> ObjectStoragePresignedUpload:
-        data = destination.dump_ref()
-        if size is not None:
-            data["size"] = size
-        if part_size:
-            data["part_size"] = part_size
-        result = UploadAPI.start(self.session, data)
-        return ObjectStoragePresignedUpload.load(result)
-
-    def complete_upload(
-        self, upload_id: str, completed_parts: List[ObjectStorageCompletePart]
-    ) -> None:
-        completed_upload = ObjectStorageCompletedUpload(parts=completed_parts)
-        UploadAPI.complete(self.session, upload_id, completed_upload.dump())
-
-    def cancel_upload(self, upload_id: str) -> None:
-        UploadAPI.cancel(self.session, upload_id)
-
-    def resume_upload(
-        self,
-        upload_id: str,
-        first_part: Optional[int] = None,
-        last_part: Optional[int] = None,
-        last_part_size: Optional[int] = None,
-    ) -> ObjectStoragePresignedUpload:
-        result = UploadAPI.resume(self.session, upload_id, first_part, last_part, last_part_size)
-        return ObjectStoragePresignedUpload.load(result)
-
-    def list_uploads(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageUploadInfo]:
-        result = UploadAPI.list(self.session, **prefix.dump())
-        return ObjectStorageUploadList.load(result).uploads
 
     def usage(
         self, org_name: Optional[str] = None, owner_name: Optional[str] = None
