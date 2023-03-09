@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import marshmallow_dataclass
 from saturnfs import settings
 from saturnfs.errors import PathErrors, SaturnError
-from saturnfs.schemas.utils import DataclassSchema
+from saturnfs.schemas.base import DataclassSchema
 
 
 @marshmallow_dataclass.dataclass
@@ -15,7 +15,9 @@ class ObjectStorage(DataclassSchema):
     owner_name: str
 
     @classmethod
-    def parse(cls, remote_path: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str) -> ObjectStorage:
+    def parse(
+        cls, remote_path: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str
+    ) -> ObjectStorage:
         org_name, owner_name, file_path = parse_remote(remote_path)
         data = {
             "org_name": org_name,
@@ -31,8 +33,12 @@ class ObjectStorage(DataclassSchema):
     def dump_ref(self) -> Dict[str, Any]:
         return self.dump(only=["org_name", "owner_name", "file_path"])
 
+    @property
+    def name(self) -> str:
+        return f"{self.org_name}/{self.owner_name}/{self.file_path}"
+
     def __str__(self) -> str:
-        return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.file_path}"
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
 
 
 @marshmallow_dataclass.dataclass
@@ -42,7 +48,9 @@ class ObjectStoragePrefix(DataclassSchema):
     owner_name: str
 
     @classmethod
-    def parse(cls, remote_prefix: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str) -> ObjectStoragePrefix:
+    def parse(
+        cls, remote_prefix: Union[str, ObjectStorage, ObjectStoragePrefix], **override: str
+    ) -> ObjectStoragePrefix:
         org_name, owner_name, prefix = parse_remote(remote_prefix)
         data = {
             "org_name": org_name,
@@ -55,8 +63,12 @@ class ObjectStoragePrefix(DataclassSchema):
     def dump_ref(self) -> Dict[str, Any]:
         return self.dump(only=["org_name", "owner_name", "prefix"])
 
+    @property
+    def name(self) -> str:
+        return f"{self.org_name}/{self.owner_name}/{self.prefix}"
+
     def __str__(self) -> str:
-        return f"{settings.SATURNFS_FILE_PREFIX}{self.org_name}/{self.owner_name}/{self.prefix}"
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
 
 
 @marshmallow_dataclass.dataclass

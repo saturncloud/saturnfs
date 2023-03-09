@@ -14,8 +14,10 @@ class AWSPresignedClient:
     def __init__(self) -> None:
         self.session = Session()
 
-    def get(self, url: str, stream: bool = False) -> Response:
-        response = self.session.get(url, stream=stream)
+    def get(
+        self, url: str, headers: Optional[Dict[str, str]] = None, stream: bool = False
+    ) -> Response:
+        response = self.session.get(url, headers=headers, stream=stream)
         self.check_errors(response)
         return response
 
@@ -33,7 +35,7 @@ class AWSPresignedClient:
         if not response.ok:
             if self.is_expired(response):
                 raise ExpiredSignature()
-            raise SaturnError(response.text)
+            raise SaturnError(response.text, status=500)
 
     def is_expired(self, response: Response) -> bool:
         if response.status_code == 403:
@@ -58,5 +60,5 @@ class AWSPresignedClient:
             etag = root.findtext(f"./{{{namespace}}}ETag")
 
         if not etag:
-            raise SaturnError("Failed to parse etag from response")
+            raise SaturnError("Failed to parse etag from response", status=500)
         return etag

@@ -31,3 +31,6 @@ class DataclassSchema:
 
     def dump(self, only: Optional[List[str]] = None) -> Dict[str, Any]:
         return self.Schema(only=only).dump(self)
+
+    def __getitem__(self, key):
+        return getattr(self, key)

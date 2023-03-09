@@ -5,7 +5,7 @@ from saturnfs.api.base import BaseAPI
 
 
 class ListAPI(BaseAPI):
-    endpoint = "/api/object_storage/"
+    endpoint = "/api/object_storage"
 
     @classmethod
     def get(

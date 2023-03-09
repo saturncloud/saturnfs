@@ -28,10 +28,10 @@ def cli():
 @click.option(
     "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
 )
-@click.option(
-    "--quiet", "-q", is_flag=True, default=False, help="Do not print file operations"
-)
-def copy(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool):
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Do not print file operations")
+def copy(
+    source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool
+):
     sfs = SaturnFS(verbose=(not quiet))
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
@@ -40,11 +40,11 @@ def copy(source_path: str, destination_path: str, part_size: Optional[int], recu
         raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
 
     if src_is_local:
-        sfs.put(source_path, destination_path, part_size, recursive)
+        sfs.put(source_path, destination_path, recursive=recursive, part_size=part_size)
     elif dst_is_local:
-        sfs.get(source_path, destination_path, recursive)
+        sfs.get(source_path, destination_path, recursive=recursive)
     else:
-        sfs.copy(source_path, destination_path, part_size, recursive)
+        sfs.cp(source_path, destination_path, recursive=recursive, part_size=part_size)
 
 
 @cli.command("mv")
@@ -60,10 +60,10 @@ def copy(source_path: str, destination_path: str, part_size: Optional[int], recu
 @click.option(
     "--recursive", "-r", is_flag=True, default=False, help="Copy files under a prefix recursively"
 )
-@click.option(
-    "--quiet", "-q", is_flag=True, default=False, help="Do not print file operations"
-)
-def move(source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool):
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Do not print file operations")
+def move(
+    source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool
+):
     sfs = SaturnFS(verbose=(not quiet))
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
@@ -79,9 +79,9 @@ def move(source_path: str, destination_path: str, part_size: Optional[int], recu
             os.remove(source_path)
     elif dst_is_local:
         sfs.get(source_path, destination_path, recursive=recursive)
-        sfs.delete(source_path, recursive=recursive)
+        sfs.rm(source_path, recursive=recursive)
     else:
-        sfs.move(source_path, destination_path, part_size=part_size, recursive=recursive)
+        sfs.mv(source_path, destination_path, part_size=part_size, recursive=recursive)
 
 
 @cli.command("rm")
@@ -95,13 +95,11 @@ def move(source_path: str, destination_path: str, part_size: Optional[int], recu
 )
 def delete(path: str, recursive: bool):
     sfs = SaturnFS()
-    sfs.delete(path, recursive=recursive)
+    sfs.rm(path, recursive=recursive)
 
 
 @cli.command("ls")
 @click.argument("prefix", type=str)
-@click.option("--last-key", "-l", help="Last seen key for pagination", type=str)
-@click.option("--max-keys", "-m", help="Maximum number of results to return", type=int)
 @click.option(
     "--recursive",
     "-r",
@@ -111,17 +109,11 @@ def delete(path: str, recursive: bool):
 )
 def list(
     prefix: str,
-    last_key: Optional[str] = None,
-    max_keys: Optional[int] = None,
     recursive: bool = False,
 ):
     sfs = SaturnFS()
-    if recursive:
-        for file in sfs.list_all(prefix):
-            click.echo(json.dumps(file.dump()))
-    else:
-        results = sfs.list(prefix, last_key, max_keys)
-        click.echo(json.dumps(results.dump(), indent=2))
+    result = sfs.ls(prefix, detail=True, recursive=recursive)
+    click.echo(json.dumps([remote.dump_extended() for remote in result]))
 
 
 @cli.command("list-uploads")

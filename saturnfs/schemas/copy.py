@@ -7,7 +7,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageCompletedUpload,
     ObjectStorageUploadInfo,
 )
-from saturnfs.schemas.utils import DataclassSchema
+from saturnfs.schemas.base import DataclassSchema
 
 
 @marshmallow_dataclass.dataclass
