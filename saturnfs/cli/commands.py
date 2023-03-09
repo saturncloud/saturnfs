@@ -118,9 +118,16 @@ def list(
 
 @cli.command("list-uploads")
 @click.argument("prefix", type=str)
-def list_uploads(prefix: str):
+@click.option("--is-copy", type=bool, is_flag=True, help="List uploads with a copy source")
+@click.option("--is-not-copy", type=bool, is_flag=True, help="List uploads with no copy source")
+def list_uploads(prefix: str, is_copy: Optional[bool], is_not_copy: bool):
     sfs = SaturnFS()
-    uploads = sfs.list_uploads(prefix)
+    if is_copy and is_not_copy:
+        uploads = []
+    else:
+        if not is_copy:
+            is_copy = False if is_not_copy else None
+        uploads = sfs.list_uploads(prefix, is_copy=is_copy)
     click.echo(json.dumps([upload.dump() for upload in uploads], indent=2))
 
 

@@ -305,9 +305,11 @@ class SaturnFS(AbstractFileSystem):
                     print_file_op("download", source, local_path)
                 self.file_transfer.download(presigned_download, local_path)
 
-    def list_uploads(self, remote_prefix: RemotePrefix) -> List[ObjectStorageUploadInfo]:
+    def list_uploads(
+        self, remote_prefix: RemotePrefix, is_copy: Optional[bool] = None
+    ) -> List[ObjectStorageUploadInfo]:
         prefix = ObjectStoragePrefix.parse(remote_prefix)
-        return self.object_storage_client.list_uploads(prefix)
+        return self.object_storage_client.list_uploads(prefix, is_copy=is_copy)
 
     def cancel_upload(self, upload_id: str):
         self.object_storage_client.cancel_upload(upload_id)

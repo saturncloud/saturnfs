@@ -1,3 +1,4 @@
+from operator import is_
 from typing import Iterable, List, Optional
 
 from requests import Session
@@ -83,8 +84,13 @@ class ObjectStorageClient:
         result = UploadAPI.resume(self.session, upload_id, first_part, last_part, last_part_size)
         return ObjectStoragePresignedUpload.load(result)
 
-    def list_uploads(self, prefix: ObjectStoragePrefix) -> List[ObjectStorageUploadInfo]:
-        result = UploadAPI.list(self.session, **prefix.dump())
+    def list_uploads(
+        self, prefix: ObjectStoragePrefix, is_copy: Optional[bool] = None
+    ) -> List[ObjectStorageUploadInfo]:
+        data = prefix.dump()
+        if is_copy is not None:
+            data["is_copy"] = is_copy
+        result = UploadAPI.list(self.session, **data)
         return ObjectStorageUploadList.load(result).uploads
 
     def delete_file(self, remote: ObjectStorage):
