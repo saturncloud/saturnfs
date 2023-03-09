@@ -33,6 +33,10 @@ class ObjectStorage(DataclassSchema):
     def dump_ref(self) -> Dict[str, Any]:
         return self.dump(only=["org_name", "owner_name", "file_path"])
 
+    @property
+    def name(self) -> str:
+        return f"{self.org_name}/{self.owner_name}/{self.file_path}"
+
     def __str__(self) -> str:
         return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
 
@@ -58,6 +62,10 @@ class ObjectStoragePrefix(DataclassSchema):
 
     def dump_ref(self) -> Dict[str, Any]:
         return self.dump(only=["org_name", "owner_name", "prefix"])
+
+    @property
+    def name(self) -> str:
+        return f"{self.org_name}/{self.owner_name}/{self.prefix}"
 
     def __str__(self) -> str:
         return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"

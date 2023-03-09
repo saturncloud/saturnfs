@@ -1,4 +1,5 @@
 from __future__ import annotations
+from io import BytesIO
 
 import os
 from datetime import datetime
@@ -382,7 +383,7 @@ class SaturnFile(AbstractBufferedFile):
         self.presigned_get: Optional[str] = None
 
     def _upload_chunk(self, final: bool = False) -> bool:
-        num_bytes = self.tell()
+        num_bytes = self.buffer.tell()
         if not final and num_bytes < self.blocksize:
             # Defer upload until there are more blocks buffered
             return False
@@ -401,12 +402,18 @@ class SaturnFile(AbstractBufferedFile):
 
             # Get next chunk
             part_num += 1
-            if num_bytes - self.tell() >= self.blocksize:
+            bytes_remaining = num_bytes - self.buffer.tell()
+            if bytes_remaining >= self.blocksize:
                 data = self.buffer.read(self.blocksize)
+            elif bytes_remaining == 0:
+                data = None
             else:
                 # Defer upload of chunks smaller than
                 # blocksize until the last part
-                self.buffer.seek(0, 2)
+                buffer = BytesIO()
+                buffer.write(self.buffer.read())
+                self.offset += self.buffer.seek(0, 2)
+                self.buffer = buffer
                 return False
 
         if self.autocommit and final:
@@ -423,7 +430,7 @@ class SaturnFile(AbstractBufferedFile):
 
     def _initiate_upload(self):
         presigned_upload = self.fs.object_storage_client.start_upload(
-            self.remote, -1, self.blocksize
+            self.remote, None, self.blocksize
         )
         self.presigned_parts = presigned_upload.parts
         self.upload_id = presigned_upload.object_storage_upload_id
@@ -454,28 +461,59 @@ class SaturnFile(AbstractBufferedFile):
         remaining_presigned = len(self.presigned_parts) - num_completed
         part_num = num_completed + 1
         last_part_size = remainder if final and remainder > 0 else None
+        total_parts = num_completed + num_parts
 
-        if remaining_presigned >= num_parts:
+        if remaining_presigned >= total_parts:
             if final:
                 # Throw out extra presigned parts
                 if remainder > 0:
                     # Fetch new final part with the correct size
-                    self.presigned_parts = self.presigned_parts[: num_parts - 1]
+                    self.presigned_parts = self.presigned_parts[: total_parts - 1]
                     remaining_presigned = num_parts - 1
                 else:
-                    self.presigned_parts = self.presigned_parts[:num_parts]
+                    self.presigned_parts = self.presigned_parts[:total_parts]
                     remaining_presigned = num_parts
 
         # Fetch new parts
-        if remaining_presigned < num_parts:
-            num_new_parts = num_parts - remaining_presigned
-            presigned_upload = self.fs.object_storage_client.resume_upload(
-                self.upload_id,
-                part_num,
-                part_num + num_new_parts - 1,
-                last_part_size=last_part_size,
-            )
-            self.presigned_parts.extend(presigned_upload.parts)
+        if remaining_presigned < total_parts:
+            min_required = num_parts - remaining_presigned
+            self._fetch_parts(part_num, min_required, final=final, last_part_size=last_part_size)
+
+    def _fetch_parts(self, first_part: int, min_parts: int, final: bool = False, last_part_size: Optional[int] = None):
+        """
+        Get new presigned part URLs from saturn.
+
+        Retrieves at least min_parts urls, but may fetch more to reduce overhead
+        """
+        if not final and min_parts < 10:
+            num_parts = 10
+        else:
+            num_parts = min_parts
+
+        retries = 5
+        presigned_upload: Optional[ObjectStoragePresignedUpload] = None
+        while presigned_upload is None and retries > 0:
+            try:
+                presigned_upload = self.fs.object_storage_client.resume_upload(
+                    self.upload_id,
+                    first_part,
+                    first_part + num_parts - 1,
+                    last_part_size=last_part_size,
+                )
+            except SaturnError as e:
+                if final or retries == 0:
+                    raise e
+                elif e.status == 400:
+                    # Check byte limit
+                    usage = self.fs.usage(self.remote.org_name, self.remote.owner_name)
+                    remaining_bytes = usage.remaining_bytes
+                    if remaining_bytes < num_parts * self.blocksize:
+                        max_parts = int(remaining_bytes / self.blocksize)
+                        if max_parts < min_parts:
+                            raise e
+                        num_parts = max_parts
+
+        self.presigned_parts.extend(presigned_upload.parts)
 
 
 def relative_path(prefix: Optional[str], file_path: str) -> str:

@@ -125,10 +125,11 @@ class ObjectStorageClient:
                 break
 
     def start_upload(
-        self, destination: ObjectStorage, size: int, part_size: Optional[int] = None
+        self, destination: ObjectStorage, size: Optional[int], part_size: Optional[int] = None
     ) -> ObjectStoragePresignedUpload:
         data = destination.dump_ref()
-        data["size"] = size
+        if size is not None:
+            data["size"] = size
         if part_size:
             data["part_size"] = part_size
         result = UploadAPI.start(self.session, data)

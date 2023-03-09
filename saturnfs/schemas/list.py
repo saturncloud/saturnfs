@@ -47,10 +47,6 @@ class ObjectStorageFileDetails(ObjectStorage):
         ordered = True
 
     @property
-    def name(self) -> str:
-        return f"{self.org_name}/{self.owner_name}/{self.file_path}"
-
-    @property
     def is_dir(self) -> Literal[False]:
         return False
 
@@ -81,10 +77,6 @@ class ObjectStorageDirDetails(ObjectStoragePrefix):
 
     class Meta:
         ordered = True
-
-    @property
-    def name(self) -> str:
-        return f"{self.org_name}/{self.owner_name}/{self.prefix}"
 
     @property
     def is_dir(self) -> Literal[True]:
