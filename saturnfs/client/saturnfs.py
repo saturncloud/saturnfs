@@ -118,7 +118,6 @@ class SaturnFS(AbstractFileSystem):
             for result in self.object_storage_client.list_iter(prefix, delimited=False):
                 bulk = BulkObjectStorage(
                     file_paths=[file.file_path for file in result.files],
-                    org_name=prefix.org_name,
                     owner_name=prefix.owner_name,
                 )
                 self.object_storage_client.delete_bulk(bulk)
@@ -291,7 +290,6 @@ class SaturnFS(AbstractFileSystem):
         for result in self.object_storage_client.list_iter(source_dir, delimited=False):
             bulk = BulkObjectStorage(
                 file_paths=[file.file_path for file in result.files],
-                org_name=source_dir.org_name,
                 owner_name=source_dir.owner_name,
             )
             bulk_download = self.object_storage_client.download_bulk(bulk)
@@ -315,9 +313,9 @@ class SaturnFS(AbstractFileSystem):
         self.object_storage_client.cancel_upload(upload_id)
 
     def usage(
-        self, org_name: Optional[str] = None, owner_name: Optional[str] = None
+        self, owner_name: Optional[str] = None
     ) -> ObjectStorageUsageResults:
-        return self.object_storage_client.usage(org_name, owner_name)
+        return self.object_storage_client.usage(owner_name)
 
     def created(self, remote_file: RemoteFile) -> datetime:
         file = self.info(remote_file)
@@ -501,7 +499,7 @@ class SaturnFile(AbstractBufferedFile):
                     raise e
                 elif e.status == 400:
                     # Check byte limit
-                    usage = self.fs.usage(self.remote.org_name, self.remote.owner_name)
+                    usage = self.fs.usage(self.remote.owner_name)
                     remaining_bytes = usage.remaining_bytes
                     if remaining_bytes < num_parts * self.blocksize:
                         max_parts = int(remaining_bytes / self.blocksize)
