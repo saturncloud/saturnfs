@@ -25,4 +25,8 @@ jobs:
           environment-file: environment.test.yaml
       - name: Lint
         shell: bash
-        run: make lint
+        run: |
+          which conda
+          which pip
+          pip show black
+          make lint
