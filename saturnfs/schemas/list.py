@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from typing_extensions import Literal
 
 import marshmallow_dataclass
-from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.base import DataclassSchema
+from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix
+from typing_extensions import Literal
 
 
 @marshmallow_dataclass.dataclass

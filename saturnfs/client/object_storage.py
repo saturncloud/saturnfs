@@ -134,8 +134,6 @@ class ObjectStorageClient:
             if not last_key:
                 break
 
-    def usage(
-        self, owner_name: Optional[str] = None
-    ) -> ObjectStorageUsageResults:
+    def usage(self, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
         result = UsageAPI.get(self.session, owner_name=owner_name)
         return ObjectStorageUsageResults.load(result)
