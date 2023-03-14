@@ -19,9 +19,5 @@ jobs:
           auto-update-conda: true
           environment-file: environment.test.yaml
       - name: Lint
-        shell: bash
-        run: |
-          which conda
-          which pip
-          pip show black
-          make lint
+        shell: bash -el {0}
+        run: make lint
