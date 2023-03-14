@@ -6,7 +6,6 @@ from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
 from saturnfs.schemas import (
     ObjectStorageCompletePart,
-    ObjectStoragePresignedCopy,
     ObjectStoragePresignedDownload,
     ObjectStoragePresignedUpload,
 )
@@ -42,12 +41,15 @@ class FileTransferClient:
             headers={
                 "Content-Type": "application/octet-stream",
                 "Content-Length": str(part.size),
+                **part.headers,
             },
         )
         etag = self.aws.parse_etag(response)
         return ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
 
-    def copy(self, presigned_copy: ObjectStoragePresignedCopy):
+    def copy(
+        self, presigned_copy: ObjectStoragePresignedUpload
+    ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         completed_parts: List[ObjectStorageCompletePart] = []
         for part in presigned_copy.parts:
             try:

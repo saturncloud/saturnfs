@@ -16,14 +16,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v1
       - name: Install conda
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v2.1.1
         with:
           python-version: 3.7
+          miniconda-version: py37_4.9.2
           activate-environment: saturnfs
           auto-update-conda: true
-      - name: Install test utils
-        shell: bash
-        run: conda env update -n saturnfs --file environment.test.yaml
+          environment-file: environment.test.yaml
       - name: Lint
         shell: bash
         run: make lint

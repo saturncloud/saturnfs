@@ -113,23 +113,22 @@ def list(
 ):
     sfs = SaturnFS()
     result = sfs.ls(prefix, detail=True, recursive=recursive)
-    click.echo(json.dumps([remote.dump_extended() for remote in result]))
+    click.echo(json.dumps([remote.dump_extended() for remote in result], indent=2))
 
 
 @cli.command("list-uploads")
 @click.argument("prefix", type=str)
-def list_uploads(prefix: str):
+@click.option("--is-copy", type=bool, is_flag=True, help="List uploads with a copy source")
+@click.option("--is-not-copy", type=bool, is_flag=True, help="List uploads with no copy source")
+def list_uploads(prefix: str, is_copy: Optional[bool], is_not_copy: bool):
     sfs = SaturnFS()
-    uploads = sfs.list_uploads(prefix)
+    if is_copy and is_not_copy:
+        uploads = []
+    else:
+        if not is_copy:
+            is_copy = False if is_not_copy else None
+        uploads = sfs.list_uploads(prefix, is_copy=is_copy)
     click.echo(json.dumps([upload.dump() for upload in uploads], indent=2))
-
-
-@cli.command("list-copies")
-@click.argument("prefix", type=str)
-def list_copies(prefix: str):
-    sfs = SaturnFS()
-    copies = sfs.list_copies(prefix)
-    click.echo(json.dumps([copy.dump() for copy in copies], indent=2))
 
 
 @cli.command("cancel-upload")
@@ -137,13 +136,6 @@ def list_copies(prefix: str):
 def cancel_upload(upload_id: str):
     sfs = SaturnFS()
     sfs.cancel_upload(upload_id)
-
-
-@cli.command("cancel-copy")
-@click.argument("copy_id", type=str)
-def cancel_copy(copy_id: str):
-    sfs = SaturnFS()
-    sfs.cancel_copy(copy_id)
 
 
 @cli.command("exists")

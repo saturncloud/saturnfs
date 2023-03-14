@@ -17,6 +17,9 @@ class DataclassSchema:
     # For mypy. marshmallow_dataclass will replace this with the real schema
     Schema: ClassVar[Type[BaseSchema]] = BaseSchema
 
+    class Meta:
+        ordered = True
+
     @classmethod
     def load(cls: Type[Self], data: Dict[str, Any], **kwargs) -> Self:
         # Exclude unknowns so old client version doesn't break if new data is added to schema

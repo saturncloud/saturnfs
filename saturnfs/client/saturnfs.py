@@ -13,7 +13,6 @@ from saturnfs.client.file_transfer import FileTransferClient
 from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
-from saturnfs.schemas.copy import ObjectStorageCopyInfo
 from saturnfs.schemas.list import ObjectStorageDirDetails, ObjectStorageFileDetails
 from saturnfs.schemas.reference import BulkObjectStorage
 from saturnfs.schemas.upload import (
@@ -247,7 +246,9 @@ class SaturnFS(AbstractFileSystem):
         if self.verbose:
             print_file_op("copy", source, destination)
 
-        presigned_copy = self.object_storage_client.start_copy(source, destination, part_size)
+        presigned_copy = self.object_storage_client.start_upload(
+            destination, part_size=part_size, copy_source=source
+        )
 
         done = False
         completed_parts: List[ObjectStorageCompletePart] = []
@@ -256,13 +257,13 @@ class SaturnFS(AbstractFileSystem):
             completed_parts.extend(parts)
             if not done:
                 # Get new presigned URLs and remove parts that have been completed
-                presigned_copy = self.object_storage_client.resume_copy(
-                    presigned_copy.object_storage_copy_id
+                presigned_copy = self.object_storage_client.resume_upload(
+                    presigned_copy.upload_id
                 )
                 presigned_copy.parts = presigned_copy.parts[len(completed_parts) :]
 
-        self.object_storage_client.complete_copy(
-            presigned_copy.object_storage_copy_id, completed_parts
+        self.object_storage_client.complete_upload(
+            presigned_copy.upload_id, completed_parts
         )
 
     def cp_dir(
@@ -304,19 +305,14 @@ class SaturnFS(AbstractFileSystem):
                     print_file_op("download", source, local_path)
                 self.file_transfer.download(presigned_download, local_path)
 
-    def list_uploads(self, remote_prefix: RemotePrefix) -> List[ObjectStorageUploadInfo]:
+    def list_uploads(
+        self, remote_prefix: RemotePrefix, is_copy: Optional[bool] = None
+    ) -> List[ObjectStorageUploadInfo]:
         prefix = ObjectStoragePrefix.parse(remote_prefix)
-        return self.object_storage_client.list_uploads(prefix)
-
-    def list_copies(self, remote_prefix: RemotePrefix) -> List[ObjectStorageCopyInfo]:
-        prefix = ObjectStoragePrefix.parse(remote_prefix)
-        return self.object_storage_client.list_copies(prefix)
+        return self.object_storage_client.list_uploads(prefix, is_copy=is_copy)
 
     def cancel_upload(self, upload_id: str):
         self.object_storage_client.cancel_upload(upload_id)
-
-    def cancel_copy(self, copy_id: str):
-        self.object_storage_client.cancel_copy(copy_id)
 
     def usage(
         self, org_name: Optional[str] = None, owner_name: Optional[str] = None
