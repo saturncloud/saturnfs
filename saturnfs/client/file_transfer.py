@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Any, BinaryIO, List, Optional, Tuple
+from typing import Any, BinaryIO, List, Tuple
 
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature

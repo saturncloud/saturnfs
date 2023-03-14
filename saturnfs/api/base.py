@@ -35,6 +35,6 @@ class BaseAPI:
                             "ObjectStorage is not enabled on this installation",
                             response.status_code,
                         )
-                    raise SaturnError(
+                    raise SaturnError(  # pylint: disable=raise-missing-from
                         response.text, response.status_code
-                    )  # pylint: disable=raise-missing-from
+                    )

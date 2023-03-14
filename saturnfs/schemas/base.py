@@ -1,5 +1,5 @@
 import json
-from typing import Any, ClassVar, Dict, Iterable, List, Optional, Type, TypeVar, Union
+from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, Union
 
 from marshmallow import EXCLUDE
 from marshmallow import Schema as BaseSchema

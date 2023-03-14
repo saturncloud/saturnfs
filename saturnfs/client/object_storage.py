@@ -1,5 +1,4 @@
-from operator import is_
-from typing import Iterable, List, Optional
+from typing import Collection, Iterable, List, Optional
 
 from requests import Session
 from requests.adapters import Retry
@@ -39,7 +38,7 @@ class ObjectStorageClient:
         self,
         retries: int = 10,
         backoff_factor: float = 0.1,
-        retry_statuses: Iterable[int] = frozenset([409, 423]),
+        retry_statuses: Collection[int] = frozenset([409, 423]),
     ):
         retry = Retry(retries, backoff_factor=backoff_factor, status_forcelist=retry_statuses)
         self.session = Session()

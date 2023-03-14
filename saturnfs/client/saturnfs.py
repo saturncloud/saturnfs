@@ -325,7 +325,9 @@ class SaturnFile(AbstractBufferedFile):
     """
 
     fs: SaturnFS
+    buffer: BytesIO
     blocksize: int
+    offset: int
 
     def __init__(
         self,
