@@ -5,7 +5,9 @@ import sys
 from typing import Optional
 
 import click
+from fsspec.callbacks import NoOpCallback
 from saturnfs import settings
+from saturnfs.cli.callback import FileOpCallback
 from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
 
@@ -32,19 +34,44 @@ def cli():
 def copy(
     source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool
 ):
-    sfs = SaturnFS(verbose=(not quiet))
+    sfs = SaturnFS()
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
 
     if src_is_local and dst_is_local:
         raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
 
-    if src_is_local:
-        sfs.put(source_path, destination_path, recursive=recursive, part_size=part_size)
-    elif dst_is_local:
-        sfs.get(source_path, destination_path, recursive=recursive)
+    if quiet:
+        callback = NoOpCallback
     else:
-        sfs.cp(source_path, destination_path, recursive=recursive, part_size=part_size)
+        callback = FileOpCallback
+
+    if src_is_local:
+        sfs.put(
+            source_path,
+            destination_path,
+            recursive=recursive,
+            part_size=part_size,
+            callback=callback(operation="upload"),
+        )
+    elif dst_is_local:
+        sfs.get(
+            source_path,
+            destination_path,
+            recursive=recursive,
+            callback=callback(operation="download"),
+        )
+    else:
+        sfs.cp(
+            source_path,
+            destination_path,
+            recursive=recursive,
+            part_size=part_size,
+            callback=callback(operation="copy"),
+        )
+
+    if not quiet:
+        click.echo()
 
 
 @cli.command("mv")
@@ -107,13 +134,16 @@ def delete(path: str, recursive: bool):
     default=False,
     help="List all files recursively under the given prefix",
 )
-def list(
+def ls(
     prefix: str,
     recursive: bool = False,
 ):
     sfs = SaturnFS()
-    result = sfs.ls(prefix, detail=True, recursive=recursive)
-    click.echo(json.dumps([remote.dump_extended() for remote in result], indent=2))
+    if recursive:
+        results = sfs.find(prefix, detail=True).values()
+    else:
+        results = sfs.ls(prefix, detail=True)
+    click.echo(json.dumps([info.dump_extended() for info in results], indent=2))
 
 
 @cli.command("list-uploads")

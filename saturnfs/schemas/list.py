@@ -17,7 +17,9 @@ class ObjectStorageListResult(DataclassSchema):
     next_last_key: Optional[str] = None
 
     @classmethod
-    def load_extended(cls, data: Dict[str, Any], prefix: ObjectStoragePrefix):
+    def load_extended(
+        cls, data: Dict[str, Any], prefix: ObjectStoragePrefix
+    ) -> ObjectStorageListResult:
         for remote in data.get("dirs", []) + data.get("files", []):
             remote["owner_name"] = prefix.owner_name
         return cls.load(data)

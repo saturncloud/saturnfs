@@ -1,5 +1,5 @@
 from json import JSONDecodeError
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlencode, urljoin
 
 from requests import Response
@@ -12,7 +12,7 @@ class BaseAPI:
 
     @classmethod
     def make_url(
-        cls, subpath: Optional[str] = None, query_args: Optional[Dict[str, Optional[str]]] = None
+        cls, subpath: Optional[str] = None, query_args: Optional[Dict[str, Any]] = None
     ) -> str:
         url = urljoin(settings.SATURN_BASE_URL, cls.endpoint)
         if subpath:

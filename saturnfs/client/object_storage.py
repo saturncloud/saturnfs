@@ -99,11 +99,12 @@ class ObjectStorageClient:
 
     def download_file(self, source: ObjectStorage) -> ObjectStoragePresignedDownload:
         result = DownloadAPI.get(self.session, source.dump_ref())
+        result.setdefault("owner_name", source.owner_name)
         return ObjectStoragePresignedDownload.load(result)
 
     def download_bulk(self, bulk: BulkObjectStorage) -> ObjectStorageBulkDownload:
         result = BulkDownloadAPI.get(self.session, bulk.dump())
-        return ObjectStorageBulkDownload.load(result)
+        return ObjectStorageBulkDownload.load_extended(result, bulk.owner_name)
 
     def list(
         self,

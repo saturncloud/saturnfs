@@ -19,3 +19,4 @@ class ObjectStorageUsageResults(DataclassSchema):
     def remaining_bytes(self) -> Optional[int]:
         if self.max_bytes is not None:
             return self.max_bytes - self.used_bytes - self.reserved_bytes
+        return None

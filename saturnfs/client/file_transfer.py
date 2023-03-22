@@ -1,7 +1,8 @@
 import os
 from datetime import datetime
-from typing import Any, BinaryIO, List, Tuple
+from typing import Any, BinaryIO, List, Optional, Tuple
 
+from fsspec import Callback
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
 from saturnfs.schemas import (
@@ -53,26 +54,33 @@ class FileTransferClient:
         completed_parts: List[ObjectStorageCompletePart] = []
         for part in presigned_copy.parts:
             try:
-                response = self.aws.put(part.url, headers=part.headers)
+                completed_part = self.copy_part(part)
+                completed_parts.append(completed_part)
             except ExpiredSignature:
                 return completed_parts, False
-
-            etag = self.aws.parse_etag(response)
-            completed_parts.append(
-                ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
-            )
-
         return completed_parts, True
 
-    def download(self, presigned_download: ObjectStoragePresignedDownload, local_path: str):
+    def copy_part(self, copy_part: ObjectStoragePresignedPart) -> ObjectStorageCompletePart:
+        response = self.aws.put(copy_part.url, headers=copy_part.headers)
+        etag = self.aws.parse_etag(response)
+        return ObjectStorageCompletePart(part_number=copy_part.part_number, etag=etag)
+
+    def download(
+        self,
+        presigned_download: ObjectStoragePresignedDownload,
+        local_path: str,
+        callback: Optional[Callback] = None,
+    ):
         dirname = os.path.dirname(local_path)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
         response = self.aws.get(presigned_download.url, stream=True)
         with open(local_path, "wb") as f:
-            for chunk in response.iter_content(8192):
-                f.write(chunk)
+            for chunk in response.iter_content(None):
+                chunk_size = f.write(chunk)
+                if callback is not None:
+                    callback.relative_update(chunk_size)
 
         set_last_modified(local_path, presigned_download.updated_at)
 
