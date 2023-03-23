@@ -140,7 +140,7 @@ def ls(
 ):
     sfs = SaturnFS()
     if recursive:
-        results = sfs.find(prefix, detail=True).values()
+        results = list(sfs.find(prefix, detail=True).values())
     else:
         results = sfs.ls(prefix, detail=True)
     click.echo(json.dumps([info.dump_extended() for info in results], indent=2))
@@ -179,9 +179,8 @@ def exists(path: str):
 
 
 @cli.command("usage")
-@click.option("--org", type=str, help="Org name")
-@click.option("--owner", type=str, help="Owner name")
-def storage_usage(org: Optional[str], owner: Optional[str]):
+@click.option("--owner", type=str, help="Owner name '<org>/<identity>'")
+def storage_usage(owner_name: Optional[str] = None):
     sfs = SaturnFS()
-    usage = sfs.usage(org, owner)
+    usage = sfs.usage(owner_name)
     click.echo(json.dumps(usage.dump(), indent=2))
