@@ -104,7 +104,13 @@ def move(
         callback = FileOpCallback(operation="move")
 
     if src_is_local:
-        sfs.put(source_path, destination_path, part_size=part_size, recursive=recursive, callback=callback)
+        sfs.put(
+            source_path,
+            destination_path,
+            part_size=part_size,
+            recursive=recursive,
+            callback=callback,
+        )
         if recursive:
             shutil.rmtree(source_path)
         else:
@@ -113,7 +119,13 @@ def move(
         sfs.get(source_path, destination_path, recursive=recursive, callback=callback)
         sfs.rm(source_path, recursive=recursive)
     else:
-        sfs.mv(source_path, destination_path, part_size=part_size, recursive=recursive, callback=callback)
+        sfs.mv(
+            source_path,
+            destination_path,
+            part_size=part_size,
+            recursive=recursive,
+            callback=callback,
+        )
 
     if not quiet:
         click.echo()

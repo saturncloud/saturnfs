@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import marshmallow_dataclass
 from saturnfs import settings
@@ -21,13 +21,27 @@ class ObjectStorageListResult(DataclassSchema):
     def load_extended(
         cls, data: Dict[str, Any], prefix: ObjectStoragePrefix
     ) -> ObjectStorageListResult:
-        for dir in data.get("dirs", []):
-            dir["file_path"] = dir.pop("prefix")
-            dir["owner_name"] = prefix.owner_name
-            dir["type"] = "directory"
-        for file in data.get("files", []):
-            file["owner_name"] = prefix.owner_name
-            file["type"] = "file"
+        dirs = data.pop("dirs", [])
+        files = data.pop("files", [])
+        data["dirs"] = [None] * len(dirs)
+        data["files"] = [None] * len(files)
+
+        for i, dir in enumerate(dirs):
+            dir_details = ObjectStorageDirDetails.load(dir)
+            data["dirs"][i] = {
+                "file_path": dir_details.prefix,
+                "owner_name": prefix.owner_name,
+                "type": "directory",
+            }
+        for i, file in enumerate(files):
+            file_details = ObjectStorageFileDetails.load(file)
+            data["files"][i] = {
+                **file_details.dump(),
+                "owner_name": prefix.owner_name,
+                "type": "file"
+            }
+
+        print(data)
 
         return cls.load(data)
 
@@ -35,7 +49,9 @@ class ObjectStorageListResult(DataclassSchema):
 @marshmallow_dataclass.dataclass
 class ObjectStorageInfo(DataclassSchema):
     """
-    Describes info about a file or directory from object storage
+    Describes info about a file or directory in object storage
+
+    Unified view of ObjectStorageFileDetails and ObjectStorageDirDetails for fsspec
     """
 
     file_path: str
@@ -63,3 +79,16 @@ class ObjectStorageInfo(DataclassSchema):
         data = self.dump()
         data["name"] = self.name
         return data
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageFileDetails(DataclassSchema):
+    file_path: str
+    size: int
+    created_at: datetime
+    updated_at: datetime
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageDirDetails(DataclassSchema):
+    prefix: str

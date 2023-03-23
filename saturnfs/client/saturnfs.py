@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import os
+import weakref
 from datetime import datetime
 from io import BytesIO, TextIOWrapper
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
-from typing_extensions import Literal
 from urllib.parse import urlparse
-import weakref
 
 from fsspec.callbacks import Callback, NoOpCallback
 from fsspec.implementations.local import make_path_posix
@@ -27,6 +26,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadInfo,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
+from typing_extensions import Literal
 
 DEFAULT_CALLBACK = NoOpCallback()
 
@@ -118,7 +118,9 @@ class SaturnFS(AbstractFileSystem):
         part_size: Optional[int] = None,
         **kwargs,
     ):
-        self.copy(path1, path2, part_size=part_size, recursive=recursive, maxdepth=maxdepth, **kwargs)
+        self.copy(
+            path1, path2, part_size=part_size, recursive=recursive, maxdepth=maxdepth, **kwargs
+        )
         self.rm(path1, recursive=recursive)
 
     @overload
@@ -129,9 +131,7 @@ class SaturnFS(AbstractFileSystem):
         return []
 
     @overload
-    def ls(
-        self, path: str, detail: Literal[True] = True, **kwargs
-    ) -> List[ObjectStorageInfo]:
+    def ls(self, path: str, detail: Literal[True] = True, **kwargs) -> List[ObjectStorageInfo]:
         # dummy code for pylint
         return []
 
@@ -162,9 +162,7 @@ class SaturnFS(AbstractFileSystem):
             return results
         return sorted([info.name for info in results])
 
-    def _lsdir(
-        self, dir: str, file_prefix: Optional[str] = None
-    ) -> List[ObjectStorageInfo]:
+    def _lsdir(self, dir: str, file_prefix: Optional[str] = None) -> List[ObjectStorageInfo]:
         path = dir.rstrip("/") + "/"
         if file_prefix:
             path += file_prefix
@@ -254,9 +252,7 @@ class SaturnFS(AbstractFileSystem):
         topdown: bool = True,
         detail: Literal[True] = True,
         **kwargs,
-    ) -> Iterable[
-        Tuple[str, Dict[str, ObjectStorageInfo], Dict[str, ObjectStorageInfo]]
-    ]:
+    ) -> Iterable[Tuple[str, Dict[str, ObjectStorageInfo], Dict[str, ObjectStorageInfo]]]:
         # dummy code for pylint
         yield "", {}, {}
 
@@ -290,7 +286,9 @@ class SaturnFS(AbstractFileSystem):
             Tuple[str, Dict[str, ObjectStorageInfo], Dict[str, ObjectStorageInfo]],
         ]
     ]:
-        for root, dirs, files in super().walk(path, maxdepth=maxdepth, topdown=topdown, detail=detail, **kwargs):
+        for root, dirs, files in super().walk(
+            path, maxdepth=maxdepth, topdown=topdown, detail=detail, **kwargs
+        ):
             yield root, dirs, files
 
     def exists(self, path: str, **kwargs) -> bool:
@@ -473,9 +471,7 @@ class SaturnFS(AbstractFileSystem):
     ):
         super().get_file(rpath, lpath, callback=callback, outfile=outfile, **kwargs)
 
-    def get_bulk(
-        self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK
-    ):
+    def get_bulk(self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK):
         callback.set_size(len(lpaths))
         downloads = self._iter_downloads(rpaths, lpaths)
         for download, lpath in callback.wrap(downloads):
@@ -543,13 +539,13 @@ class SaturnFS(AbstractFileSystem):
     def created(self, path: str) -> datetime:
         info = self.info(path)
         if not info.is_dir:
-            return info.created_at  # type: ignore=[return-value]
+            return info.created_at  # type: ignore[return-value]
         raise FileNotFoundError(path)
 
     def modified(self, path: str) -> datetime:
         info = self.info(path)
         if not info.is_dir:
-            return info.updated_at  # type: ignore=[return-value]
+            return info.updated_at  # type: ignore[return-value]
         raise FileNotFoundError(path)
 
     def close(self):
