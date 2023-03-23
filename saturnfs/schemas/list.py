@@ -7,74 +7,57 @@ from typing import Any, Dict, List, Optional, Union
 import marshmallow_dataclass
 from saturnfs import settings
 from saturnfs.schemas.base import DataclassSchema
-from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix, full_path
+from saturnfs.schemas.reference import ObjectStoragePrefix, full_path
 from typing_extensions import Literal
 
 
 @marshmallow_dataclass.dataclass
 class ObjectStorageListResult(DataclassSchema):
-    dirs: List[ObjectStorageDirDetails] = field(default_factory=list)
-    files: List[ObjectStorageFileDetails] = field(default_factory=list)
+    dirs: List[ObjectStorageInfo] = field(default_factory=list)
+    files: List[ObjectStorageInfo] = field(default_factory=list)
     next_last_key: Optional[str] = None
 
     @classmethod
     def load_extended(
         cls, data: Dict[str, Any], prefix: ObjectStoragePrefix
     ) -> ObjectStorageListResult:
-        for remote in data.get("dirs", []) + data.get("files", []):
-            remote["owner_name"] = prefix.owner_name
+        for dir in data.get("dirs", []):
+            dir["file_path"] = dir.pop("prefix")
+            dir["owner_name"] = prefix.owner_name
+            dir["type"] = "directory"
+        for file in data.get("files", []):
+            file["owner_name"] = prefix.owner_name
+            file["type"] = "file"
+
         return cls.load(data)
 
 
 @marshmallow_dataclass.dataclass
-class ObjectStorageFileDetails(ObjectStorage):
+class ObjectStorageInfo(DataclassSchema):
     """
-    Detailed information about a file in object storage
-
-    Extends ObjectStorage so that list results may be referenced
-    directory for download, copy, etc.
+    Describes info about a file or directory from object storage
     """
 
     file_path: str
-    size: int
-    created_at: datetime
-    updated_at: datetime
-
-    # Not returned from API, added during load
     owner_name: str
-    type: Literal["file"] = field(default="file", metadata={"dump_only": True})
+    type: Literal["directory", "file"]
+    size: int = field(default=0)
+    created_at: Optional[datetime] = field(default=None)
+    updated_at: Optional[datetime] = field(default=None)
 
     @property
-    def is_dir(self) -> Literal[False]:
-        return False
-
-    def dump_extended(self) -> Dict[str, Any]:
-        data = self.dump()
-        data["name"] = self.name
-        return data
-
-
-@marshmallow_dataclass.dataclass
-class ObjectStorageDirDetails(ObjectStoragePrefix):
-    """
-    Describes a set of files with common prefix delimited by "/"
-
-    Extends ObjectStoragePrefix so that list results may be referenced
-    directly for listing subdirectories, download_dir, copy_dir, etc.
-    """
-
-    prefix: str
-
-    # Not returned from API, added during load
-    owner_name: str
-    type: Literal["directory"] = field(default="directory", metadata={"dump_only": True})
-    size: Literal[0] = field(default=0, metadata={"dump_only": True})
-    created_at: Literal[None] = field(default=None, metadata={"dump_only": True})
-    updated_at: Literal[None] = field(default=None, metadata={"dump_only": True})
+    def is_dir(self) -> bool:
+        return self.type == "directory"
 
     @property
-    def is_dir(self) -> Literal[True]:
-        return True
+    def name(self) -> str:
+        return full_path(self.owner_name, self.file_path)
+
+    def __fspath__(self) -> str:
+        return self.name
+
+    def __str__(self) -> str:
+        return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
 
     def dump_extended(self) -> Dict[str, Any]:
         data = self.dump()

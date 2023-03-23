@@ -17,7 +17,7 @@ from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.download import ObjectStoragePresignedDownload
-from saturnfs.schemas.list import ObjectStorageDirDetails, ObjectStorageFileDetails
+from saturnfs.schemas.list import ObjectStorageInfo
 from saturnfs.schemas.reference import BulkObjectStorage
 from saturnfs.schemas.upload import (
     ObjectStorageCompletePart,
@@ -34,8 +34,7 @@ class SaturnFS(AbstractFileSystem):
     blocksize = settings.S3_MIN_PART_SIZE
     protocol = "sfs"
 
-    def __init__(self, verbose: bool = False):
-        self.verbose = verbose
+    def __init__(self):
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
         super().__init__()
@@ -52,9 +51,8 @@ class SaturnFS(AbstractFileSystem):
         callback: Callback = DEFAULT_CALLBACK,
         **kwargs,
     ):
-        lpaths = make_path_posix(lpath)
-
         rpaths = self.expand_path(rpath, recursive=recursive)
+        lpaths = make_path_posix(lpath)
         lpaths = other_paths(rpaths, lpaths)
 
         self.get_bulk(rpaths, lpaths, callback=callback)
@@ -118,8 +116,7 @@ class SaturnFS(AbstractFileSystem):
         part_size: Optional[int] = None,
         **kwargs,
     ):
-        super().mv
-        self.copy(path1, path2, part_size=part_size, recursive=recursive, maxdepth=maxdepth)
+        self.copy(path1, path2, part_size=part_size, recursive=recursive, maxdepth=maxdepth, **kwargs)
         self.rm(path1, recursive=recursive)
 
     @overload
@@ -132,17 +129,14 @@ class SaturnFS(AbstractFileSystem):
     @overload
     def ls(
         self, path: str, detail: Literal[True] = True, **kwargs
-    ) -> List[Union[ObjectStorageFileDetails, ObjectStorageDirDetails]]:
+    ) -> List[ObjectStorageInfo]:
         # dummy code for pylint
         return []
 
     @overload
     def ls(
         self, path: str, detail: bool = False, **kwargs
-    ) -> Union[
-        List[str],
-        List[Union[ObjectStorageFileDetails, ObjectStorageDirDetails]],
-    ]:
+    ) -> Union[List[str], List[ObjectStorageInfo]]:
         return []  # type: ignore[return-value]
 
     def ls(
@@ -150,40 +144,37 @@ class SaturnFS(AbstractFileSystem):
         path: str,
         detail: bool = False,
         **kwargs,
-    ) -> Union[List[str], List[Union[ObjectStorageDirDetails, ObjectStorageFileDetails]]]:
+    ) -> Union[List[str], List[ObjectStorageInfo]]:
         path_is_dir = path.endswith("/")
         path = path.rstrip("/")
         remote = ObjectStoragePrefix.parse(path)
 
-        results: List[Union[ObjectStorageDirDetails, ObjectStorageFileDetails]] = []
-        dirs, files = self._lsdir(path)
-        if dirs or files:
-            results = [*dirs, *files]
-        elif not path_is_dir:
+        results = self._lsdir(path)
+        if not results and not path_is_dir:
             # Check for file exactly matching the given path
             file_prefix = path.rsplit("/", 1)[-1]
-            _, files = self._lsdir(self._parent(path), file_prefix=file_prefix)
-            results = [file for file in files if file.name == remote.name]
+            results = self._lsdir(self._parent(path), file_prefix=file_prefix)
+            results = [info for info in results if not info.is_dir and info.name == remote.name]
 
         if detail:
             return results
-        return sorted([remote.name for remote in results])
+        return sorted([info.name for info in results])
 
     def _lsdir(
         self, dir: str, file_prefix: Optional[str] = None
-    ) -> Tuple[List[ObjectStorageDirDetails], List[ObjectStorageFileDetails]]:
+    ) -> List[ObjectStorageInfo]:
         path = dir.rstrip("/") + "/"
         if file_prefix:
             path += file_prefix
         prefix = ObjectStoragePrefix.parse(path)
 
-        files: List[ObjectStorageFileDetails] = []
-        dirs: List[ObjectStorageDirDetails] = []
+        files: List[ObjectStorageInfo] = []
+        dirs: List[ObjectStorageInfo] = []
         for result in self.object_storage_client.list_iter(prefix):
             files.extend(result.files)
             dirs.extend(result.dirs)
 
-        return dirs, files
+        return dirs + files
 
     @overload
     def find(  # type: ignore[misc]
@@ -205,7 +196,7 @@ class SaturnFS(AbstractFileSystem):
         withdirs: bool = False,
         detail: Literal[True] = True,
         **kwargs,
-    ) -> Dict[str, ObjectStorageFileDetails]:
+    ) -> Dict[str, ObjectStorageInfo]:
         # dummy code for pylint
         return {}
 
@@ -217,7 +208,7 @@ class SaturnFS(AbstractFileSystem):
         withdirs: bool = False,
         detail: bool = False,
         **kwargs,
-    ) -> Union[List[str], Dict[str, ObjectStorageFileDetails]]:
+    ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
         # dummy code for pylint
         return []  # type: ignore[return-value]
 
@@ -228,11 +219,11 @@ class SaturnFS(AbstractFileSystem):
         withdirs: bool = False,
         detail: bool = False,
         **kwargs,
-    ) -> Union[List[str], Dict[str, ObjectStorageFileDetails]]:
+    ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
         prefix = ObjectStoragePrefix.parse(path.rstrip("/") + "/")
         if maxdepth is None:
             # Can list more efficiently by ignoring / delimiters rather than walking the file tree
-            files: List[ObjectStorageFileDetails] = []
+            files: List[ObjectStorageInfo] = []
 
             for result in self.object_storage_client.list_iter(prefix, delimited=False):
                 files.extend(result.files)
@@ -262,7 +253,7 @@ class SaturnFS(AbstractFileSystem):
         detail: Literal[True] = True,
         **kwargs,
     ) -> Iterable[
-        Tuple[str, Dict[str, ObjectStorageDirDetails], Dict[str, ObjectStorageFileDetails]]
+        Tuple[str, Dict[str, ObjectStorageInfo], Dict[str, ObjectStorageInfo]]
     ]:
         # dummy code for pylint
         yield "", {}, {}
@@ -278,7 +269,7 @@ class SaturnFS(AbstractFileSystem):
     ) -> Iterable[
         Union[
             Tuple[str, List[str], List[str]],
-            Tuple[str, Dict[str, ObjectStorageDirDetails], Dict[str, ObjectStorageFileDetails]],
+            Tuple[str, Dict[str, ObjectStorageInfo], Dict[str, ObjectStorageInfo]],
         ]
     ]:
         # dummy code for pylint
@@ -294,7 +285,7 @@ class SaturnFS(AbstractFileSystem):
     ) -> Iterable[
         Union[
             Tuple[str, List[str], List[str]],
-            Tuple[str, Dict[str, ObjectStorageDirDetails], Dict[str, ObjectStorageFileDetails]],
+            Tuple[str, Dict[str, ObjectStorageInfo], Dict[str, ObjectStorageInfo]],
         ]
     ]:
         for root, dirs, files in super().walk(path, maxdepth=maxdepth, topdown=topdown, detail=detail, **kwargs):
@@ -307,9 +298,7 @@ class SaturnFS(AbstractFileSystem):
         except FileNotFoundError:
             return False
 
-    def info(
-        self, path: str, **kwargs
-    ) -> Union[ObjectStorageFileDetails, ObjectStorageDirDetails]:
+    def info(self, path: str, **kwargs) -> ObjectStorageInfo:
         remote = ObjectStoragePrefix.parse(path)
         if remote.prefix.endswith("/"):
             remote.prefix = remote.prefix.rstrip("/")
@@ -318,7 +307,7 @@ class SaturnFS(AbstractFileSystem):
         for r in results:
             if r.name.rstrip("/") == remote.name:
                 return r
-        raise FileNotFoundError(str(path))
+        raise FileNotFoundError(path)
 
     @overload
     def open(
@@ -331,7 +320,7 @@ class SaturnFS(AbstractFileSystem):
         **kwargs,
     ) -> SaturnFile:
         # dummy code for pylint
-        return SaturnFile(self, str(path))
+        return SaturnFile(self, path)
 
     @overload
     def open(
@@ -357,7 +346,7 @@ class SaturnFS(AbstractFileSystem):
         **kwargs,
     ) -> Union[TextIOWrapper, SaturnFile]:
         # dummy code for pylint
-        return SaturnFile(self, str(path))
+        return SaturnFile(self, path)
 
     def open(
         self,
@@ -552,13 +541,13 @@ class SaturnFS(AbstractFileSystem):
     def created(self, path: str) -> datetime:
         info = self.info(path)
         if not info.is_dir:
-            return info.created_at
+            return info.created_at  # type: ignore=[return-value]
         raise FileNotFoundError(path)
 
     def modified(self, path: str) -> datetime:
         info = self.info(path)
         if not info.is_dir:
-            return info.updated_at
+            return info.updated_at  # type: ignore=[return-value]
         raise FileNotFoundError(path)
 
 
