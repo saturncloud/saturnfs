@@ -13,10 +13,15 @@ class FileOpCallback(Callback):
     def __init__(self, operation: str, inner: bool = False, **kwargs):
         self.operation = operation
         self.inner = inner
+        self.first_branch = False
         super().__init__(**kwargs)
 
     def branch(self, path_1, path_2, kwargs):
-        click.echo(f"\n{self.operation}: {path_1} to {path_2} ", nl=False)
+        if not self.first_branch:
+            self.first_branch = True
+        else:
+            click.echo()
+        click.echo(f"{self.operation}: {path_1} to {path_2} ", nl=False)
         kwargs["callback"] = FileOpCallback(self.operation, inner=True)
 
     def call(self, hook_name: Optional[str] = None, **kwargs):

@@ -98,17 +98,25 @@ def move(
     if src_is_local and dst_is_local:
         raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
 
+    if quiet:
+        callback = NoOpCallback()
+    else:
+        callback = FileOpCallback(operation="move")
+
     if src_is_local:
-        sfs.put(source_path, destination_path, part_size=part_size, recursive=recursive)
+        sfs.put(source_path, destination_path, part_size=part_size, recursive=recursive, callback=callback)
         if recursive:
             shutil.rmtree(source_path)
         else:
             os.remove(source_path)
     elif dst_is_local:
-        sfs.get(source_path, destination_path, recursive=recursive)
+        sfs.get(source_path, destination_path, recursive=recursive, callback=callback)
         sfs.rm(source_path, recursive=recursive)
     else:
-        sfs.mv(source_path, destination_path, part_size=part_size, recursive=recursive)
+        sfs.mv(source_path, destination_path, part_size=part_size, recursive=recursive, callback=callback)
+
+    if not quiet:
+        click.echo()
 
 
 @cli.command("rm")

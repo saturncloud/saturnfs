@@ -76,11 +76,17 @@ class FileTransferClient:
             os.makedirs(dirname, exist_ok=True)
 
         response = self.aws.get(presigned_download.url, stream=True)
+        if callback is not None:
+            content_length = response.headers.get("Content-Length")
+            callback.set_size(int(content_length) if content_length else None)
+
         with open(local_path, "wb") as f:
             for chunk in response.iter_content(None):
                 chunk_size = f.write(chunk)
                 if callback is not None:
                     callback.relative_update(chunk_size)
+            else:
+                callback.relative_update(0)
 
         set_last_modified(local_path, presigned_download.updated_at)
 
