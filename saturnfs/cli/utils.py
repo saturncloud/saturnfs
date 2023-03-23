@@ -68,6 +68,7 @@ def tabulate(
     rpadding: int = 4,
     justify: Optional[Dict[str, str]] = None,
 ):
+    justify = justify if justify else {}
     widths: List[int] = [0] * len(headers)
     for i, header in enumerate(headers):
         widths[i] = len(header)

@@ -8,7 +8,7 @@ class Units(int, Enum):
     TiB = 1 << 40
 
 
-def human_readable_format(size: int):
+def human_readable_format(size: float):
     for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
         if size < 1024.0 or unit == "TiB":
             break
