@@ -6,11 +6,12 @@ from io import BytesIO, TextIOWrapper
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from typing_extensions import Literal
 from urllib.parse import urlparse
+import weakref
 
 from fsspec.callbacks import Callback, NoOpCallback
 from fsspec.implementations.local import make_path_posix
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem
-from fsspec.utils import other_paths, stringify_path
+from fsspec.utils import other_paths
 from saturnfs import settings
 from saturnfs.client.file_transfer import FileTransferClient
 from saturnfs.client.object_storage import ObjectStorageClient
@@ -37,6 +38,7 @@ class SaturnFS(AbstractFileSystem):
     def __init__(self):
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
+        weakref.finalize(self, self.close)
         super().__init__()
 
     @property
@@ -549,6 +551,10 @@ class SaturnFS(AbstractFileSystem):
         if not info.is_dir:
             return info.updated_at  # type: ignore=[return-value]
         raise FileNotFoundError(path)
+
+    def close(self):
+        self.object_storage_client.close()
+        self.file_transfer.close()
 
 
 class SaturnFile(AbstractBufferedFile):

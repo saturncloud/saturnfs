@@ -85,10 +85,14 @@ class FileTransferClient:
                 chunk_size = f.write(chunk)
                 if callback is not None:
                     callback.relative_update(chunk_size)
-            else:
-                callback.relative_update(0)
+
+        if callback is not None and callback.size == 0:
+            callback.relative_update(0)
 
         set_last_modified(local_path, presigned_download.updated_at)
+
+    def close(self):
+        self.aws.close()
 
 
 class FileLimiter:

@@ -91,7 +91,7 @@ def copy(
 def move(
     source_path: str, destination_path: str, part_size: Optional[int], recursive: bool, quiet: bool
 ):
-    sfs = SaturnFS(verbose=(not quiet))
+    sfs = SaturnFS()
     src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
     dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
 
