@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import marshmallow_dataclass
+from saturnfs import settings
 from saturnfs.schemas.base import DataclassSchema
-from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix
+from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix, full_path
 from typing_extensions import Literal
 
 
@@ -40,7 +41,7 @@ class ObjectStorageFileDetails(ObjectStorage):
     updated_at: datetime
 
     # Not returned from API, added during load
-    owner_name: str = field(metadata={"load_only": True})
+    owner_name: str
     type: Literal["file"] = field(default="file", metadata={"dump_only": True})
 
     @property
@@ -65,7 +66,7 @@ class ObjectStorageDirDetails(ObjectStoragePrefix):
     prefix: str
 
     # Not returned from API, added during load
-    owner_name: str = field(metadata={"load_only": True})
+    owner_name: str
     type: Literal["directory"] = field(default="directory", metadata={"dump_only": True})
     size: Literal[0] = field(default=0, metadata={"dump_only": True})
     created_at: Literal[None] = field(default=None, metadata={"dump_only": True})

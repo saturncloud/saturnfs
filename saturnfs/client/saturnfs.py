@@ -344,7 +344,8 @@ class SaturnFS(AbstractFileSystem):
         compression: Optional[str] = None,
         **kwargs,
     ) -> SaturnFile:
-        return SaturnFile(self, str(path))  # dummy code for pylint
+        # dummy code for pylint
+        return SaturnFile(self, str(path))
 
     @overload
     def open(
@@ -356,7 +357,8 @@ class SaturnFS(AbstractFileSystem):
         compression: Optional[str] = None,
         **kwargs,
     ) -> TextIOWrapper:
-        return TextIOWrapper(BytesIO())  # dummy code for pylint
+        # dummy code for pylint
+        return TextIOWrapper(BytesIO())
 
     @overload
     def open(
@@ -368,7 +370,8 @@ class SaturnFS(AbstractFileSystem):
         compression: Optional[str] = None,
         **kwargs,
     ) -> Union[TextIOWrapper, SaturnFile]:
-        return SaturnFile(self, str(path))  # dummy code for pylint
+        # dummy code for pylint
+        return SaturnFile(self, str(path))
 
     def open(
         self,

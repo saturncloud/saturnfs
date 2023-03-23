@@ -15,7 +15,7 @@ class DataclassSchema:
     """
 
     # For mypy. marshmallow_dataclass will replace this with the real schema
-    Schema: ClassVar[Type[BaseSchema]] = BaseSchema
+    Schema: ClassVar[Type[BaseSchema]]
 
     class Meta:
         ordered = True
