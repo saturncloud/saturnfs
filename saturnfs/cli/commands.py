@@ -8,6 +8,12 @@ import click
 from fsspec.callbacks import NoOpCallback
 from saturnfs import settings
 from saturnfs.cli.callback import FileOpCallback
+from saturnfs.cli.utils import (
+    OutputFormats,
+    print_file_table,
+    print_json,
+    print_upload_table,
+)
 from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
 
@@ -154,23 +160,59 @@ def delete(path: str, recursive: bool):
     default=False,
     help="List all files recursively under the given prefix",
 )
+@click.option(
+    "--output",
+    "-o",
+    default=OutputFormats.TABLE,
+    help="Output format (table, json)",
+)
+@click.option(
+    "--human-readable",
+    "-h",
+    is_flag=True,
+    help="Display size in human readable units",
+)
 def ls(
     prefix: str,
-    recursive: bool = False,
+    recursive: bool,
+    output: str,
+    human_readable: bool,
 ):
+    OutputFormats.validate(output)
+
     sfs = SaturnFS()
     if recursive:
         results = list(sfs.find(prefix, detail=True).values())
     else:
         results = sfs.ls(prefix, detail=True)
-    click.echo(json.dumps([info.dump_extended() for info in results], indent=2))
+
+    if output == OutputFormats.JSON:
+        print_json([info.dump_extended() for info in results])
+    elif output == OutputFormats.TABLE:
+        print_file_table(results, human_readable=human_readable)
 
 
 @cli.command("list-uploads")
 @click.argument("prefix", type=str)
 @click.option("--is-copy", type=bool, is_flag=True, help="List uploads with a copy source")
 @click.option("--is-not-copy", type=bool, is_flag=True, help="List uploads with no copy source")
-def list_uploads(prefix: str, is_copy: Optional[bool], is_not_copy: bool):
+@click.option(
+    "--output",
+    "-o",
+    default=OutputFormats.TABLE,
+    help="Output format (table, json)",
+)
+@click.option(
+    "--human-readable",
+    "-h",
+    is_flag=True,
+    help="Display size in human readable units",
+)
+def list_uploads(
+    prefix: str, is_copy: Optional[bool], is_not_copy: bool, output: str, human_readable: bool
+):
+    OutputFormats.validate(output)
+
     sfs = SaturnFS()
     if is_copy and is_not_copy:
         uploads = []
@@ -178,7 +220,11 @@ def list_uploads(prefix: str, is_copy: Optional[bool], is_not_copy: bool):
         if not is_copy:
             is_copy = False if is_not_copy else None
         uploads = sfs.list_uploads(prefix, is_copy=is_copy)
-    click.echo(json.dumps([upload.dump() for upload in uploads], indent=2))
+
+    if output == OutputFormats.JSON:
+        print_json([upload.dump_extended() for upload in uploads])
+    elif output == OutputFormats.TABLE:
+        print_upload_table(uploads, is_not_copy=is_not_copy, human_readable=human_readable)
 
 
 @cli.command("cancel-upload")

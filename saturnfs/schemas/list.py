@@ -38,10 +38,8 @@ class ObjectStorageListResult(DataclassSchema):
             data["files"][i] = {
                 **file_details.dump(),
                 "owner_name": prefix.owner_name,
-                "type": "file"
+                "type": "file",
             }
-
-        print(data)
 
         return cls.load(data)
 

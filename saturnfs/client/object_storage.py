@@ -52,13 +52,13 @@ class ObjectStorageClient:
         part_size: Optional[int] = None,
         copy_source: Optional[ObjectStorage] = None,
     ) -> ObjectStoragePresignedUpload:
-        data = destination.dump_ref()
+        data = destination.dump()
         if size is not None:
             data["size"] = size
         if part_size:
             data["part_size"] = part_size
         if copy_source:
-            data["copy_source"] = copy_source.dump_ref()
+            data["copy_source"] = copy_source.dump()
         result = UploadAPI.start(self.session, data)
         return ObjectStoragePresignedUpload.load(result)
 
@@ -88,17 +88,17 @@ class ObjectStorageClient:
         if is_copy is not None:
             data["is_copy"] = is_copy
         result = UploadAPI.list(self.session, **data)
-        return ObjectStorageUploadList.load(result).uploads
+        return ObjectStorageUploadList.load_extended(result, prefix).uploads
 
     def delete_file(self, remote: ObjectStorage):
-        DeleteAPI.delete(self.session, remote.dump_ref())
+        DeleteAPI.delete(self.session, remote.dump())
 
     def delete_bulk(self, bulk: BulkObjectStorage):
         result = BulkDeleteAPI.delete(self.session, bulk.dump())
         return ObjectStorageBulkDeleteResults.load(result)
 
     def download_file(self, source: ObjectStorage) -> ObjectStoragePresignedDownload:
-        result = DownloadAPI.get(self.session, source.dump_ref())
+        result = DownloadAPI.get(self.session, source.dump())
         result.setdefault("owner_name", source.owner_name)
         return ObjectStoragePresignedDownload.load(result)
 
@@ -115,7 +115,7 @@ class ObjectStorageClient:
     ) -> ObjectStorageListResult:
         result = ListAPI.get(
             self.session,
-            **prefix.dump_ref(),
+            **prefix.dump(),
             last_key=last_key,
             max_keys=max_keys,
             delimited=delimited,

@@ -28,9 +28,6 @@ class ObjectStorage(DataclassSchema):
 
         return cls(**data)
 
-    def dump_ref(self) -> Dict[str, Any]:
-        return self.dump(only=["owner_name", "file_path"])
-
     @property
     def name(self) -> str:
         return full_path(self.owner_name, self.file_path)
@@ -58,9 +55,6 @@ class ObjectStoragePrefix(DataclassSchema):
             **override,
         }
         return cls(**data)
-
-    def dump_ref(self) -> Dict[str, Any]:
-        return self.dump(only=["owner_name", "prefix"])
 
     @property
     def name(self) -> str:
