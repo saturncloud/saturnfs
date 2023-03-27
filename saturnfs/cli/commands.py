@@ -1,3 +1,4 @@
+from glob import has_magic
 import json
 import os
 import shutil
@@ -183,9 +184,12 @@ def ls(
     sfs = SaturnFS()
     if recursive:
         details = sfs.find(prefix, detail=True)
-    else:
+        results = list(details.values())  # pylint: disable=no-member
+    elif has_magic(prefix):
         details = sfs.glob(prefix, detail=True)
-    results = list(details.values())  # pylint: disable=no-member
+        results = list(details.values())  # pylint: disable=no-member
+    else:
+        results = sfs.ls(prefix, detail=True)
 
     if output == OutputFormats.JSON:
         print_json([info.dump_extended() for info in results])
