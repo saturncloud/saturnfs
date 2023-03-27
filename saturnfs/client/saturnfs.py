@@ -57,7 +57,13 @@ class SaturnFS(AbstractFileSystem):
         lpaths = make_path_posix(lpath)
         lpaths = other_paths(rpaths, lpaths)
 
-        self.get_bulk(rpaths, lpaths, callback=callback)
+        if len(rpaths) == 1:
+            kwargs = {}
+            rpath, lpath = rpaths[0], lpaths[0]
+            callback.branch(rpath, lpath, kwargs)
+            self.get_file(rpath, lpath, **kwargs)
+        else:
+            self.get_bulk(rpaths, lpaths, callback=callback)
 
     def put(
         self,

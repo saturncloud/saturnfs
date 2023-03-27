@@ -183,9 +183,9 @@ def ls(
     sfs = SaturnFS()
     if recursive:
         details = sfs.find(prefix, detail=True)
-        results = list(details.values())  # pylint: disable=no-member
     else:
-        results = sfs.ls(prefix, detail=True)
+        details = sfs.glob(prefix, detail=True)
+    results = list(details.values())  # pylint: disable=no-member
 
     if output == OutputFormats.JSON:
         print_json([info.dump_extended() for info in results])
