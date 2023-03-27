@@ -59,9 +59,8 @@ class SaturnFS(AbstractFileSystem):
 
         if len(rpaths) == 1:
             kwargs = {}
-            rpath, lpath = rpaths[0], lpaths[0]
-            callback.branch(rpath, lpath, kwargs)
-            self.get_file(rpath, lpath, **kwargs)
+            callback.branch(rpaths[0], lpaths[0], kwargs)
+            self.get_file(rpaths[0], lpaths[0], **kwargs)
         else:
             self.get_bulk(rpaths, lpaths, callback=callback)
 
@@ -147,22 +146,29 @@ class SaturnFS(AbstractFileSystem):
     ) -> Union[List[str], List[ObjectStorageInfo]]:
         return []  # type: ignore[return-value]
 
-    def ls(  # pylint: disable=unused-argument
+    def ls(
         self,
         path: str,
         detail: bool = False,
         **kwargs,
     ) -> Union[List[str], List[ObjectStorageInfo]]:
+        refresh = kwargs.get("refresh", False)
         path_is_dir = path.endswith("/")
         path = path.rstrip("/")
-        remote = ObjectStoragePrefix.parse(path)
 
-        results = self._lsdir(path)
-        if not results and not path_is_dir:
-            # Check for file exactly matching the given path
-            file_prefix = path.rsplit("/", 1)[-1]
-            results = self._lsdir(self._parent(path), file_prefix=file_prefix)
-            results = [info for info in results if not info.is_dir and info.name == remote.name]
+        results: Optional[List[ObjectStorageInfo]] = None
+        if not refresh:
+            results = self._ls_from_cache(path)
+
+        if refresh or results is None:
+            remote = ObjectStoragePrefix.parse(path)
+            results = self._lsdir(path)
+            if not results and not path_is_dir:
+                # Check for file exactly matching the given path
+                file_prefix = path.rsplit("/", 1)[-1]
+                results = self._lsdir(self._parent(path), file_prefix=file_prefix)
+                results = [info for info in results if not info.is_dir and info.name == remote.name]
+            self.dircache[path] = results
 
         if detail:
             return results
@@ -425,6 +431,7 @@ class SaturnFS(AbstractFileSystem):
 
             if size == 0:
                 callback.relative_update(0)
+        self.invalidate_cache(rpath)
 
     def cp_file(  # pylint: disable=unused-argument
         self,
@@ -466,6 +473,7 @@ class SaturnFS(AbstractFileSystem):
                 done = True
 
         self.object_storage_client.complete_upload(presigned_copy.upload_id, completed_parts)
+        self.invalidate_cache(path2)
 
     def get_file(
         self,
@@ -510,6 +518,7 @@ class SaturnFS(AbstractFileSystem):
     def rm_file(self, path: str):
         remote = ObjectStorage.parse(path)
         self.object_storage_client.delete_file(remote)
+        self.invalidate_cache(path)
 
     def rm_bulk(self, paths: List[str]):
         owner_paths: Dict[str, List[str]] = {}
@@ -528,6 +537,8 @@ class SaturnFS(AbstractFileSystem):
                     owner_name=owner_name,
                 )
                 self.object_storage_client.delete_bulk(bulk)
+                for path in bulk.file_paths:
+                    self.invalidate_cache(path)
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
     def list_uploads(
@@ -558,6 +569,18 @@ class SaturnFS(AbstractFileSystem):
         self.object_storage_client.close()
         self.file_transfer.close()
 
+    def invalidate_cache(self, path: Optional[str] = None):
+        if path is None:
+            self.dircache.clear()
+        else:
+            path = self._strip_protocol(path)
+            self.dircache.pop(path, None)
+            while path:
+                self.dircache.pop(path, None)
+                path = self._parent(path)
+
+        super().invalidate_cache(path)
+
 
 class SaturnFile(AbstractBufferedFile):
     """
@@ -568,6 +591,7 @@ class SaturnFile(AbstractBufferedFile):
     buffer: BytesIO
     blocksize: int
     offset: Optional[int] = None
+    path: str
 
     def __init__(
         self,
@@ -674,6 +698,7 @@ class SaturnFile(AbstractBufferedFile):
     def commit(self):
         if self.upload_id:
             self.fs.object_storage_client.complete_upload(self.upload_id, self.completed_parts)
+            self.fs.invalidate_cache(self.path)
 
     def discard(self):
         if self.upload_id:
@@ -784,17 +809,3 @@ class SaturnFile(AbstractBufferedFile):
         if presigned_upload is None:
             raise SaturnError("Failed to retrieve presigned upload")
         self.presigned_parts.extend(presigned_upload.parts)
-
-
-def relative_path(prefix: Optional[str], file_path: str) -> str:
-    if prefix:
-        dirname = f"{os.path.dirname(prefix)}/"
-        if file_path.startswith(dirname):
-            return file_path[len(dirname) :]
-    return file_path
-
-
-def walk_dir(local_dir: str) -> Iterable[str]:
-    for root, _, files in os.walk(local_dir):
-        for file in files:
-            yield os.path.join(root, file)
