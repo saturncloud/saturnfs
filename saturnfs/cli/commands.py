@@ -183,7 +183,7 @@ def ls(
     sfs = SaturnFS()
     if recursive:
         details = sfs.find(prefix, detail=True)
-        results = list(details.values())
+        results = list(details.values())  # pylint: disable=no-member
     else:
         results = sfs.ls(prefix, detail=True)
 
