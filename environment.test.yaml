@@ -11,3 +11,4 @@ dependencies:
       - pylint>=2.17.0,<2.18.0
       - pre-commit>=2.9.3
       - types-requests
+      - marshmallow-dataclass
