@@ -183,7 +183,7 @@ def ls(
 
     sfs = SaturnFS()
     if recursive:
-        details: Dict[str, ObjectStorageInfo] = sfs.find(prefix, detail=True)
+        details = sfs.find(prefix, detail=True)
         results = list(details.values())
     else:
         results = sfs.ls(prefix, detail=True)
