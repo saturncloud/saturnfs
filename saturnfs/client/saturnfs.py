@@ -45,7 +45,7 @@ class SaturnFS(AbstractFileSystem):
     def fsid(self) -> str:
         return "sfs_" + str(urlparse(settings.SATURN_BASE_URL).hostname)
 
-    def get(
+    def get(  # pylint: disable=unused-argument
         self,
         rpath: Union[str, List[str]],
         lpath: Union[str, List[str]],
@@ -141,7 +141,7 @@ class SaturnFS(AbstractFileSystem):
     ) -> Union[List[str], List[ObjectStorageInfo]]:
         return []  # type: ignore[return-value]
 
-    def ls(
+    def ls(  # pylint: disable=unused-argument
         self,
         path: str,
         detail: bool = False,
@@ -420,7 +420,7 @@ class SaturnFS(AbstractFileSystem):
             if size == 0:
                 callback.relative_update(0)
 
-    def cp_file(
+    def cp_file(  # pylint: disable=unused-argument
         self,
         path1: str,
         path2: str,
@@ -561,7 +561,7 @@ class SaturnFile(AbstractBufferedFile):
     fs: SaturnFS
     buffer: BytesIO
     blocksize: int
-    offset: int
+    offset: Optional[int] = None
 
     def __init__(
         self,
@@ -640,6 +640,8 @@ class SaturnFile(AbstractBufferedFile):
                     # blocksize until the last part
                     buffer = BytesIO()
                     buffer.write(self.buffer.read())
+                    if self.offset is None:
+                        self.offset = 0
                     self.offset += self.buffer.seek(0, 2)
                     self.buffer = buffer
                     return False

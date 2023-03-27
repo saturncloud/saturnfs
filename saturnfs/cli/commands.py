@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import sys
-from typing import Optional
+from typing import Dict, Optional
 
 import click
 from fsspec.callbacks import NoOpCallback
@@ -16,6 +16,7 @@ from saturnfs.cli.utils import (
 )
 from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
+from saturnfs.schemas.list import ObjectStorageInfo
 
 
 @click.group()
@@ -182,7 +183,8 @@ def ls(
 
     sfs = SaturnFS()
     if recursive:
-        results = list(sfs.find(prefix, detail=True).values())
+        details: Dict[str, ObjectStorageInfo] = sfs.find(prefix, detail=True)
+        results = list(details.values())
     else:
         results = sfs.ls(prefix, detail=True)
 
