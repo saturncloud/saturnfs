@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import sys
-from typing import Dict, Optional
+from typing import Optional
 
 import click
 from fsspec.callbacks import NoOpCallback
@@ -16,7 +16,6 @@ from saturnfs.cli.utils import (
 )
 from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
-from saturnfs.schemas.list import ObjectStorageInfo
 
 
 @click.group()
