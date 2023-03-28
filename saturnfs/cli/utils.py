@@ -1,3 +1,4 @@
+from glob import has_magic
 import json
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
@@ -30,15 +31,21 @@ def print_json(data: Union[List, Dict]):
     click.echo(json.dumps(data, indent=2))
 
 
-def print_file_table(results: List[ObjectStorageInfo], human_readable: bool = False):
-    headers = ["LastModified", "Size", "Name"]
+def print_file_table(
+    results: List[ObjectStorageInfo], human_readable: bool = False, relative_prefix: Optional[str] = None
+):
+    headers = ["LastModified", "Size", "RelativePath" if relative_prefix else "Path"]
     data: List[List[str]] = []
     for info in results:
         last_modified = str(info.updated_at) if info.updated_at else ""
         size = ""
         if not info.is_dir:
             size = human_readable_format(info.size) if human_readable else str(info.size)
-        data.append([last_modified, size, info.name])
+        if relative_prefix and info.name.startswith(relative_prefix):
+            path = info.name[len(relative_prefix):].lstrip("/")
+        else:
+            path = info.name
+        data.append([last_modified, size, path])
     tabulate(data, headers, justify={"Size": ">"})
 
 
@@ -91,3 +98,23 @@ def tabulate(
     click.echo("-" * (sum(widths) + rpadding * (len(headers) - 1)))
     for row in data:
         click.echo(format_str.format(*row))
+
+
+def strip_glob(path: str) -> str:
+    """
+    Return the longest full directory prefix of path with no glob characters
+
+    e.g. org/identity/my/path*/tofiles?.txt -> org/identity/my/
+    """
+    if not has_magic(path):
+        return path
+
+    indstar = path.find("*") if path.find("*") >= 0 else len(path)
+    indques = path.find("?") if path.find("?") >= 0 else len(path)
+    indbrace = path.find("[") if path.find("[") >= 0 else len(path)
+    first = min(indstar, indques, indbrace)
+
+    path = path[:first]
+    if "/" in path:
+        return path.rsplit("/", 1)[0]
+    return ""

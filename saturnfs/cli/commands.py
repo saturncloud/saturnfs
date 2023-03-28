@@ -14,6 +14,7 @@ from saturnfs.cli.utils import (
     print_file_table,
     print_json,
     print_upload_table,
+    strip_glob,
 )
 from saturnfs.client import SaturnFS
 from saturnfs.errors import PathErrors, SaturnError
@@ -171,13 +172,20 @@ def delete(path: str, recursive: bool):
     "--human-readable",
     "-h",
     is_flag=True,
-    help="Display size in human readable units",
+    help="Display size in human readable units. Only used for table output.",
+)
+@click.option(
+    "--absolute",
+    "-a",
+    is_flag=True,
+    help="Display absolute path. Only used for table output.",
 )
 def ls(
     prefix: str,
     recursive: bool,
     output: str,
     human_readable: bool,
+    absolute: bool,
 ):
     OutputFormats.validate(output)
 
@@ -194,7 +202,11 @@ def ls(
     if output == OutputFormats.JSON:
         print_json([info.dump_extended() for info in results])
     elif output == OutputFormats.TABLE:
-        print_file_table(results, human_readable=human_readable)
+        relative_prefix = None
+        if not absolute:
+            relative_prefix = sfs._strip_protocol(prefix)
+            relative_prefix = strip_glob(relative_prefix)
+        print_file_table(results, human_readable=human_readable, relative_prefix=relative_prefix)
 
 
 @cli.command("list-uploads")
