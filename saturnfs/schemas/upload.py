@@ -50,8 +50,6 @@ class ObjectStorageUploadList(DataclassSchema):
         uploads = data.get("uploads", [])
         for upload in uploads:
             upload["owner_name"] = prefix.owner_name
-            if upload["copy_source"]:
-                print(upload)
         return cls.load(data)
 
 
