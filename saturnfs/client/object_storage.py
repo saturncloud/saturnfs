@@ -5,7 +5,7 @@ from requests.adapters import HTTPAdapter, Retry
 from saturnfs import settings
 from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
-from saturnfs.api.list import ListAPI
+from saturnfs.api.list import ListAPI, OrgListAPI, SharedAPI
 from saturnfs.api.upload import UploadAPI
 from saturnfs.api.usage import UsageAPI
 from saturnfs.schemas.delete import ObjectStorageBulkDeleteResults
@@ -13,7 +13,7 @@ from saturnfs.schemas.download import (
     ObjectStorageBulkDownload,
     ObjectStoragePresignedDownload,
 )
-from saturnfs.schemas.list import ObjectStorageListResult
+from saturnfs.schemas.list import ObjectStorageListResult, ObjectStorageOrgs, ObjectStorageSharedResult, Org
 from saturnfs.schemas.reference import (
     BulkObjectStorage,
     ObjectStorage,
@@ -133,6 +133,31 @@ class ObjectStorageClient:
 
             if not last_key:
                 break
+
+    def shared(
+        self, org_name: str, last_key: Optional[str] = None, max_keys: Optional[int] = None
+    ) -> ObjectStorageSharedResult:
+        result = SharedAPI.get(
+            self.session, org_name=org_name, last_key=last_key, max_keys=max_keys
+        )
+        return ObjectStorageSharedResult.load(result)
+
+    def shared_iter(self, org_name: str) -> Iterable[ObjectStorageSharedResult]:
+        last_key: Optional[str] = None
+        while True:
+            shared_results = self.shared(org_name, last_key=last_key)
+            last_key = shared_results.next_last_key
+            yield shared_results
+
+            if not last_key:
+                break
+
+    def orgs(self) -> List[Org]:
+        result = OrgListAPI.get(self.session)
+        return [
+            org for org in ObjectStorageOrgs.load(result).orgs
+            if not org.locked
+        ]
 
     def usage(self, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
         result = UsageAPI.get(self.session, owner_name=owner_name)

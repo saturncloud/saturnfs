@@ -153,7 +153,7 @@ def delete(path: str, recursive: bool):
 
 
 @cli.command("ls")
-@click.argument("prefix", type=str)
+@click.argument("prefix", type=str, required=False, default="")
 @click.option(
     "--recursive",
     "-r",

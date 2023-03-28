@@ -154,20 +154,26 @@ class SaturnFS(AbstractFileSystem):
     ) -> Union[List[str], List[ObjectStorageInfo]]:
         refresh = kwargs.get("refresh", False)
         path_is_dir = path.endswith("/")
-        path = path.rstrip("/")
+        path = self._strip_protocol(path)
 
         results: Optional[List[ObjectStorageInfo]] = None
         if not refresh:
             results = self._ls_from_cache(path)
 
         if refresh or results is None:
-            remote = ObjectStoragePrefix.parse(path)
-            results = self._lsdir(path)
-            if not results and not path_is_dir:
-                # Check for file exactly matching the given path
-                file_prefix = path.rsplit("/", 1)[-1]
-                results = self._lsdir(self._parent(path), file_prefix=file_prefix)
-                results = [info for info in results if not info.is_dir and info.name == remote.name]
+            if "/" in path:
+                # List object storage for an owner
+                results = self._lsdir(path)
+                if not results and not path_is_dir:
+                    # Check for file exactly matching the given path
+                    file_prefix = path.rsplit("/", 1)[-1]
+                    results = self._lsdir(self._parent(path), file_prefix=file_prefix)
+                    results = [info for info in results if not info.is_dir and info.name == path]
+            elif path:
+                # List owners with shared object storage in the org
+                results = self._lsshared(path)
+            else:
+                results = self._lsorg()
             self.dircache[path] = results
 
         if detail:
@@ -175,6 +181,9 @@ class SaturnFS(AbstractFileSystem):
         return sorted([info.name for info in results])
 
     def _lsdir(self, dir: str, file_prefix: Optional[str] = None) -> List[ObjectStorageInfo]:
+        """
+        List contents of the given directory, optionally filtered by a file prefix
+        """
         path = dir.rstrip("/") + "/"
         if file_prefix:
             path += file_prefix
@@ -187,6 +196,38 @@ class SaturnFS(AbstractFileSystem):
             dirs.extend(result.dirs)
 
         return dirs + files
+
+    def _lsshared(self, org_name: str) -> List[ObjectStorageInfo]:
+        """
+        List owners that have shared object storage as "directories"
+        """
+        owners: List[ObjectStorageInfo] = []
+        for result in self.object_storage_client.shared_iter(org_name):
+            owners.extend(
+                [
+                    ObjectStorageInfo(
+                        file_path="/",
+                        owner_name=owner.name,
+                        type="directory",
+                    )
+                    for owner in result.owners
+                ]
+            )
+        return owners
+
+    def _lsorg(self) -> List[ObjectStorageInfo]:
+        """
+        List orgs that the current identity has access to as "directories"
+        """
+        orgs = self.object_storage_client.orgs()
+        return [
+            ObjectStorageInfo(
+                file_path="/",
+                owner_name=org.name,
+                type="directory",
+            )
+            for org in orgs
+        ]
 
     @overload
     def find(  # type: ignore[misc]

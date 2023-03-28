@@ -90,3 +90,32 @@ class ObjectStorageFileDetails(DataclassSchema):
 @marshmallow_dataclass.dataclass
 class ObjectStorageDirDetails(DataclassSchema):
     prefix: str
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageSharedResult(DataclassSchema):
+    owners: List[ObjectStorageSharedOwner]
+    next_last_key: Optional[str] = None
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageSharedOwner(DataclassSchema):
+    id: str
+    name: str
+    count: int
+
+
+@marshmallow_dataclass.dataclass
+class ObjectStorageOrgs(DataclassSchema):
+    orgs: List[Org]
+
+
+@marshmallow_dataclass.dataclass
+class Org(DataclassSchema):
+    id: str
+    created_at: datetime
+    name: str
+    email: Optional[str]
+    description: str
+    is_default: bool
+    locked: bool

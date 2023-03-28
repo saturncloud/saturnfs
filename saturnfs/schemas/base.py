@@ -19,11 +19,12 @@ class DataclassSchema:
 
     class Meta:
         ordered = True
+        unknown = EXCLUDE
 
     @classmethod
     def load(cls: Type[Self], data: Dict[str, Any], **kwargs) -> Self:
         # Exclude unknowns so old client version doesn't break if new data is added to schema
-        return cls.Schema(unknown=EXCLUDE).load(data, **kwargs)
+        return cls.Schema().load(data, **kwargs)
 
     @classmethod
     def loads(cls: Type[Self], data: Union[str, bytes], **kwargs) -> Self:
