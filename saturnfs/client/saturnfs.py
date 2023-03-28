@@ -180,6 +180,28 @@ class SaturnFS(AbstractFileSystem):
             return results
         return sorted([info.name for info in results])
 
+    def _ls_from_cache(self, path: str) -> Optional[List[ObjectStorageInfo]]:
+        if path.rstrip("/") in self.dircache:
+            return self.dircache[path.rstrip("/")]
+
+        parent = self._parent(path)
+        parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
+        if parent_files is not None:
+            files = [
+                f for f in parent_files
+                if f.name == path
+                or (f.name.rstrip("/") == path.rstrip("/") and f.is_dir)
+            ]
+            if len(files) == 0:
+                # parent dir was listed but did not contain this file
+                raise FileNotFoundError(path)
+            elif len(files) == 1 and files[0].is_dir:
+                # Cache contained the directory, but not its contents
+                # List on a directory path should never return just the directory itself
+                return None
+            return files
+        return None
+
     def _lsdir(self, dir: str, file_prefix: Optional[str] = None) -> List[ObjectStorageInfo]:
         """
         List contents of the given directory, optionally filtered by a file prefix
@@ -273,10 +295,11 @@ class SaturnFS(AbstractFileSystem):
         detail: bool = False,
         **kwargs,
     ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
-        prefix = ObjectStoragePrefix.parse(path.rstrip("/") + "/")
-        if maxdepth is None:
+        path = self._strip_protocol(path)
+        if maxdepth is None and "/" in path:
             # Can list more efficiently by ignoring / delimiters rather than walking the file tree
             files: List[ObjectStorageInfo] = []
+            prefix = ObjectStoragePrefix.parse(path + "/")
 
             for result in self.object_storage_client.list_iter(prefix, delimited=False):
                 files.extend(result.files)
@@ -284,6 +307,24 @@ class SaturnFS(AbstractFileSystem):
                 return {file.name: file for file in files}
             return sorted(file.name for file in files)
         return super().find(path, maxdepth=maxdepth, withdirs=withdirs, detail=detail, **kwargs)
+
+    @overload
+    def glob(self, path: str, detail: Literal[False] = False, **kwargs) -> List[str]:  # type: ignore[misc]
+        # dummy code for pylint
+        return []
+
+    @overload
+    def glob(self, path: str, detail: Literal[True] = True, **kwargs) -> Dict[str, ObjectStorageInfo]:
+        # dummy code for pylint
+        return {}
+
+    @overload
+    def glob(self, path: str, detail: bool = False, **kwargs) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
+        # dummy code for pylint
+        return []  # type: ignore[return-value]
+
+    def glob(self, path: str, detail: bool = False, **kwargs) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
+        return super().glob(path, detail=detail, **kwargs)
 
     @overload
     def walk(  # type: ignore[misc]
@@ -352,13 +393,16 @@ class SaturnFS(AbstractFileSystem):
             return False
 
     def info(self, path: str, **kwargs) -> ObjectStorageInfo:
-        remote = ObjectStoragePrefix.parse(path)
-        if remote.prefix.endswith("/"):
-            remote.prefix = remote.prefix.rstrip("/")
-
-        results = self.ls(remote.name, detail=True, **kwargs)
+        path = self._strip_protocol(path)
+        results = self.ls(self._parent(path), detail=True, **kwargs)
         for r in results:
-            if r.name.rstrip("/") == remote.name:
+            if r.name.rstrip("/") == path:
+                return r
+
+        # TODO: Don't think this is doing anything useful
+        results = self.ls(path, detail=True, **kwargs)
+        for r in results:
+            if r.name.rstrip("/") == path:
                 return r
         raise FileNotFoundError(path)
 
