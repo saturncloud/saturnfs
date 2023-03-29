@@ -198,8 +198,9 @@ class SaturnFS(AbstractFileSystem):
         return sorted([info.name for info in results])
 
     def _ls_from_cache(self, path: str) -> Optional[List[ObjectStorageInfo]]:
-        if path.rstrip("/") in self.dircache:
-            return self.dircache[path.rstrip("/")]
+        path = self._strip_protocol(path)
+        if path in self.dircache:
+            return self.dircache[path]
 
         parent = self._parent(path)
         parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
@@ -207,7 +208,7 @@ class SaturnFS(AbstractFileSystem):
             files = [
                 f for f in parent_files
                 if f.name == path
-                or (f.name.rstrip("/") == path.rstrip("/") and f.is_dir)
+                or (f.name.rstrip("/") == path and f.is_dir)
             ]
             if len(files) == 0:
                 # parent dir was listed but did not contain this file

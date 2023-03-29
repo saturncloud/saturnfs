@@ -37,8 +37,10 @@ def print_file_table(
     headers = ["LastModified", "Size", "RelativePath" if relative_prefix else "Path"]
     data: List[List[str]] = []
     for info in results:
-        last_modified = str(info.updated_at) if info.updated_at else ""
+        last_modified = ""
         size = ""
+        if info.updated_at:
+            last_modified = info.updated_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
         if not info.is_dir:
             size = human_readable_format(info.size) if human_readable else str(info.size)
         if relative_prefix and info.name.startswith(relative_prefix):
@@ -46,7 +48,7 @@ def print_file_table(
         else:
             path = info.name
         data.append([last_modified, size, path])
-    tabulate(data, headers, justify={"Size": ">"})
+    tabulate(data, headers, justify={"Size": ">"}, minwidth={"LastModified": 20, "Size": 10})
 
 
 def print_upload_table(
@@ -58,15 +60,16 @@ def print_upload_table(
 
     data: List[List[str]] = []
     for upload in uploads:
+        expires = upload.expires_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
         size = ""
         if upload.size is not None:
             size = human_readable_format(upload.size) if human_readable else str(upload.size)
-        row = [upload.id, str(upload.expires_at), size, upload.name]
+        row = [upload.id, expires, size, upload.name]
         if not is_not_copy:
             row.append(upload.copy_source.name if upload.copy_source else "")
         data.append(row)
 
-    tabulate(data, headers, justify={"Size": ">"})
+    tabulate(data, headers, justify={"Size": ">"}, minwidth={"ID": 32, "Expiration": 20, "Size": 10})
 
 
 def tabulate(
@@ -74,11 +77,13 @@ def tabulate(
     headers: List[str],
     rpadding: int = 4,
     justify: Optional[Dict[str, str]] = None,
+    minwidth: Optional[Dict[str, int]] = None
 ):
     justify = justify if justify else {}
+    minwidth = minwidth if minwidth else {}
     widths: List[int] = [0] * len(headers)
     for i, header in enumerate(headers):
-        widths[i] = len(header)
+        widths[i] = max(len(header), minwidth.get(header, 0))
 
     for row in data:
         for i, value in enumerate(row):
