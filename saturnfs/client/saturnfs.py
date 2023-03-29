@@ -1,4 +1,5 @@
 from __future__ import annotations
+from glob import has_magic
 
 import os
 import weakref
@@ -8,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
 
 from fsspec.callbacks import Callback, NoOpCallback
-from fsspec.implementations.local import make_path_posix
+from fsspec.implementations.local import LocalFileSystem, make_path_posix
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem
 from fsspec.utils import other_paths
 from saturnfs import settings
@@ -70,12 +71,30 @@ class SaturnFS(AbstractFileSystem):
         rpath: Union[str, List[str]],
         recursive: bool = False,
         callback: Callback = DEFAULT_CALLBACK,
-        part_size: Optional[int] = None,
         **kwargs,
     ):
-        super().put(
-            lpath, rpath, recursive=recursive, callback=callback, part_size=part_size, **kwargs
+        rpath = self._strip_protocol(rpath)
+        if isinstance(lpath, str):
+            lpath = make_path_posix(lpath)
+
+        fs = LocalFileSystem()
+        lpaths = fs.expand_path(lpath, recursive=recursive)
+        is_dir = isinstance(rpath, str) and self.isdir(rpath)
+
+        # Overriding the default implementation to set exists=False
+        # Without this, there's no way to format a recursive put
+        # such that files always end up in the same location
+        rpaths = other_paths(
+            lpaths,
+            rpath,
+            exists=False,
+            is_dir=is_dir,
         )
+
+        callback.set_size(len(rpaths))
+        for lpath, rpath in callback.wrap(zip(lpaths, rpaths)):
+            callback.branch(lpath, rpath, kwargs)
+            self.put_file(lpath, rpath, **kwargs)
 
     def copy(
         self,
@@ -85,7 +104,6 @@ class SaturnFS(AbstractFileSystem):
         on_error: Optional[str] = None,
         callback: Callback = DEFAULT_CALLBACK,
         maxdepth: Optional[int] = None,
-        part_size: Optional[int] = None,
         **kwargs,
     ):
         if on_error is None and recursive:
@@ -100,7 +118,7 @@ class SaturnFS(AbstractFileSystem):
         for p1, p2 in zip(path1, path2):
             callback.branch(p1, p2, kwargs)
             try:
-                self.cp_file(p1, p2, part_size=part_size, **kwargs)
+                self.cp_file(p1, p2, **kwargs)
             except FileNotFoundError:
                 if on_error == "raise":
                     raise
@@ -120,13 +138,12 @@ class SaturnFS(AbstractFileSystem):
         path2: Union[str, List[str]],
         recursive: bool = False,
         maxdepth: Optional[int] = None,
-        part_size: Optional[int] = None,
         **kwargs,
     ):
         self.copy(
-            path1, path2, part_size=part_size, recursive=recursive, maxdepth=maxdepth, **kwargs
+            path1, path2, recursive=recursive, maxdepth=maxdepth, **kwargs
         )
-        self.rm(path1, recursive=recursive)
+        self.rm(path1, recursive=recursive, maxdepth=maxdepth)
 
     @overload
     def ls(  # type: ignore[misc]
@@ -386,6 +403,10 @@ class SaturnFS(AbstractFileSystem):
             yield root, dirs, files
 
     def exists(self, path: str, **kwargs) -> bool:
+        if has_magic(path):
+            # Avoid unecessary check in fsspec.
+            # Paths with glob will never exist in saturn object storage
+            return False
         try:
             self.info(path, **kwargs)
             return True
@@ -523,7 +544,7 @@ class SaturnFS(AbstractFileSystem):
         path1: str,
         path2: str,
         callback: Callback = DEFAULT_CALLBACK,
-        part_size: Optional[int] = None,
+        block_size: Optional[int] = None,
         **kwargs,
     ):
         source = ObjectStorage.parse(path1)
@@ -531,7 +552,7 @@ class SaturnFS(AbstractFileSystem):
 
         try:
             presigned_copy = self.object_storage_client.start_upload(
-                destination, part_size=part_size, copy_source=source
+                destination, part_size=block_size, copy_source=source
             )
         except SaturnError as e:
             if e.status == 404:
