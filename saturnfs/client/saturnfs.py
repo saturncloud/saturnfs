@@ -847,7 +847,6 @@ class SaturnFile(AbstractBufferedFile):
 
         num_completed = len(self.completed_parts)
         num_presigned = len(self.presigned_parts)
-        # remaining_presigned = num_presigned - num_completed
         last_part_size = remainder if final and remainder > 0 else None
         total_parts = num_completed + num_parts
 
@@ -856,7 +855,7 @@ class SaturnFile(AbstractBufferedFile):
             num_presigned = num_completed
             self.presigned_parts = self.presigned_parts[:num_presigned]
         elif final and num_presigned >= total_parts:
-            if remainder > 0:
+            if remainder > 0 and remainder != self.presigned_parts[total_parts-1].size:
                 # Fetch new final part with the correct size
                 num_presigned = total_parts - 1
             else:
