@@ -29,8 +29,6 @@ from saturnfs.schemas.upload import (
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
 
-dump_only = ["org_name", "owner_name", "file_path"]
-
 
 class ObjectStorageClient:
     """
@@ -136,8 +134,6 @@ class ObjectStorageClient:
             if not last_key:
                 break
 
-    def usage(
-        self, org_name: Optional[str] = None, owner_name: Optional[str] = None
-    ) -> ObjectStorageUsageResults:
-        result = UsageAPI.get(self.session, org_name=org_name, owner_name=owner_name)
+    def usage(self, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
+        result = UsageAPI.get(self.session, owner_name=owner_name)
         return ObjectStorageUsageResults.load(result)

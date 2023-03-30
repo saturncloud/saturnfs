@@ -1,8 +1,8 @@
 from __future__ import annotations
-from io import BytesIO
 
 import os
 from datetime import datetime
+from io import BytesIO
 from typing import Any, Dict, Iterable, List, Optional, Union, overload
 from urllib.parse import urlparse
 
@@ -22,9 +22,8 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadInfo,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
-from typing_extensions import Literal
-
 from saturnfs.utils import Units
+from typing_extensions import Literal
 
 # Remotes describe the org, owner, and complete or partial path to a file (or files)
 # stored in saturn object storage.
@@ -104,9 +103,7 @@ class SaturnFS(AbstractFileSystem):
         if recursive is None:
             recursive = isinstance(path1, ObjectStoragePrefix)
 
-        self.cp(
-            path1, path2, part_size=part_size, recursive=recursive
-        )
+        self.cp(path1, path2, part_size=part_size, recursive=recursive)
         self.rm(path1, recursive=recursive)
 
     def rm(self, path: RemotePath, recursive: Optional[bool] = None):
@@ -118,7 +115,6 @@ class SaturnFS(AbstractFileSystem):
             for result in self.object_storage_client.list_iter(prefix, delimited=False):
                 bulk = BulkObjectStorage(
                     file_paths=[file.file_path for file in result.files],
-                    org_name=prefix.org_name,
                     owner_name=prefix.owner_name,
                 )
                 self.object_storage_client.delete_bulk(bulk)
@@ -175,9 +171,7 @@ class SaturnFS(AbstractFileSystem):
         except FileNotFoundError:
             return False
 
-    def info(
-        self, path: RemotePath
-    ) -> Union[ObjectStorageFileDetails, ObjectStorageDirDetails]:
+    def info(self, path: RemotePath) -> Union[ObjectStorageFileDetails, ObjectStorageDirDetails]:
         remote = ObjectStoragePrefix.parse(path)
         if remote.prefix.endswith("/"):
             remote.prefix = remote.prefix.rstrip("/")
@@ -257,14 +251,10 @@ class SaturnFS(AbstractFileSystem):
             completed_parts.extend(parts)
             if not done:
                 # Get new presigned URLs and remove parts that have been completed
-                presigned_copy = self.object_storage_client.resume_upload(
-                    presigned_copy.upload_id
-                )
+                presigned_copy = self.object_storage_client.resume_upload(presigned_copy.upload_id)
                 presigned_copy.parts = presigned_copy.parts[len(completed_parts) :]
 
-        self.object_storage_client.complete_upload(
-            presigned_copy.upload_id, completed_parts
-        )
+        self.object_storage_client.complete_upload(presigned_copy.upload_id, completed_parts)
 
     def cp_dir(
         self,
@@ -291,7 +281,6 @@ class SaturnFS(AbstractFileSystem):
         for result in self.object_storage_client.list_iter(source_dir, delimited=False):
             bulk = BulkObjectStorage(
                 file_paths=[file.file_path for file in result.files],
-                org_name=source_dir.org_name,
                 owner_name=source_dir.owner_name,
             )
             bulk_download = self.object_storage_client.download_bulk(bulk)
@@ -314,10 +303,8 @@ class SaturnFS(AbstractFileSystem):
     def cancel_upload(self, upload_id: str):
         self.object_storage_client.cancel_upload(upload_id)
 
-    def usage(
-        self, org_name: Optional[str] = None, owner_name: Optional[str] = None
-    ) -> ObjectStorageUsageResults:
-        return self.object_storage_client.usage(org_name, owner_name)
+    def usage(self, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
+        return self.object_storage_client.usage(owner_name)
 
     def created(self, remote_file: RemoteFile) -> datetime:
         file = self.info(remote_file)
@@ -475,7 +462,13 @@ class SaturnFile(AbstractBufferedFile):
             min_required = num_parts - remaining_presigned
             self._fetch_parts(part_num, min_required, final=final, last_part_size=last_part_size)
 
-    def _fetch_parts(self, first_part: int, min_parts: int, final: bool = False, last_part_size: Optional[int] = None):
+    def _fetch_parts(
+        self,
+        first_part: int,
+        min_parts: int,
+        final: bool = False,
+        last_part_size: Optional[int] = None,
+    ):
         """
         Get new presigned part URLs from saturn.
 
@@ -501,7 +494,7 @@ class SaturnFile(AbstractBufferedFile):
                     raise e
                 elif e.status == 400:
                     # Check byte limit
-                    usage = self.fs.usage(self.remote.org_name, self.remote.owner_name)
+                    usage = self.fs.usage(self.remote.owner_name)
                     remaining_bytes = usage.remaining_bytes
                     if remaining_bytes < num_parts * self.blocksize:
                         max_parts = int(remaining_bytes / self.blocksize)

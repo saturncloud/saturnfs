@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from typing_extensions import Literal
 
 import marshmallow_dataclass
-from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.base import DataclassSchema
+from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix
+from typing_extensions import Literal
 
 
 @marshmallow_dataclass.dataclass
@@ -19,7 +19,6 @@ class ObjectStorageListResult(DataclassSchema):
     @classmethod
     def load_extended(cls, data: Dict[str, Any], prefix: ObjectStoragePrefix):
         for remote in data.get("dirs", []) + data.get("files", []):
-            remote["org_name"] = prefix.org_name
             remote["owner_name"] = prefix.owner_name
         return cls.load(data)
 
@@ -39,7 +38,6 @@ class ObjectStorageFileDetails(ObjectStorage):
     updated_at: datetime
 
     # Not returned from API, added during load
-    org_name: str = field(metadata={"load_only": True})
     owner_name: str = field(metadata={"load_only": True})
     type: Literal["file"] = field(default="file", metadata={"dump_only": True})
 
@@ -65,7 +63,6 @@ class ObjectStorageDirDetails(ObjectStoragePrefix):
     prefix: str
 
     # Not returned from API, added during load
-    org_name: str = field(metadata={"load_only": True})
     owner_name: str = field(metadata={"load_only": True})
     type: Literal["directory"] = field(default="directory", metadata={"dump_only": True})
     size: Literal[0] = field(default=0, metadata={"dump_only": True})
