@@ -46,7 +46,10 @@ def print_file_table(
         if not info.is_dir:
             size = human_readable_format(info.size) if human_readable else str(info.size)
         if relative_prefix and info.name.startswith(relative_prefix):
-            path = info.name[len(relative_prefix) :].lstrip("/")
+            if info.name == relative_prefix:
+                path = info.name.rsplit("/", 1)[-1]
+            else:
+                path = info.name[len(relative_prefix) :].lstrip("/")
         else:
             path = info.name
         data.append([last_modified, size, path])
