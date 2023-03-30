@@ -112,7 +112,7 @@ class SaturnFS(AbstractFileSystem):
             on_error = "raise"
 
         path1 = self.expand_path(path1, recursive=recursive, maxdepth=maxdepth)
-        path2 = other_paths(path1, path2)
+        path2 = other_paths(path1, self._strip_protocol(path2))
 
         callback.set_size(len(path2))
         for p1, p2 in zip(path1, path2):
@@ -128,9 +128,10 @@ class SaturnFS(AbstractFileSystem):
         path: Union[str, List[str]],
         recursive: bool = False,
         maxdepth: Optional[int] = None,
+        callback: Callback = DEFAULT_CALLBACK,
     ):
         paths = self.expand_path(path, recursive=recursive, maxdepth=maxdepth)
-        self.rm_bulk(paths)
+        self.rm_bulk(paths, callback=callback)
 
     def mv(
         self,
@@ -138,10 +139,19 @@ class SaturnFS(AbstractFileSystem):
         path2: Union[str, List[str]],
         recursive: bool = False,
         maxdepth: Optional[int] = None,
+        callback: Callback = DEFAULT_CALLBACK,
+        rm_callback: Callback = DEFAULT_CALLBACK,
         **kwargs,
     ):
-        self.copy(path1, path2, recursive=recursive, maxdepth=maxdepth, **kwargs)
-        self.rm(path1, recursive=recursive, maxdepth=maxdepth)
+        self.copy(path1, path2, recursive=recursive, maxdepth=maxdepth, callback=callback, **kwargs)
+
+        rm_kwargs: Dict[str, Callback] = {}
+        if isinstance(path1, str):
+            rm_callback.branch(path1, "", rm_kwargs)
+        else:
+            rm_callback.branch(f"{len(path1)} files", "", rm_kwargs)
+
+        self.rm(path1, recursive=recursive, maxdepth=maxdepth, **rm_kwargs)
 
     @overload
     def ls(  # type: ignore[misc]
@@ -626,12 +636,15 @@ class SaturnFS(AbstractFileSystem):
                     yield download, downloads[download.file_path]
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
-    def rm_file(self, path: str):
+    def rm_file(self, path: str, callback: Callback = DEFAULT_CALLBACK):
+        callback.set_size(1)
         remote = ObjectStorage.parse(path)
         self.object_storage_client.delete_file(remote)
         self.invalidate_cache(path)
+        callback.relative_update(1)
 
-    def rm_bulk(self, paths: List[str]):
+    def rm_bulk(self, paths: List[str], callback: Callback = DEFAULT_CALLBACK):
+        callback.set_size(len(paths))
         owner_paths: Dict[str, List[str]] = {}
         for path in paths:
             remote = ObjectStorage.parse(path)
@@ -643,6 +656,8 @@ class SaturnFS(AbstractFileSystem):
             # Delete in batches of 1000
             i = 0
             while i < len(file_paths):
+                file_paths_chunk = file_paths[i : i + settings.OBJECT_STORAGE_MAX_LIST_COUNT]
+                callback.relative_update(len(file_paths_chunk))
                 bulk = BulkObjectStorage(
                     file_paths=file_paths[i : i + settings.OBJECT_STORAGE_MAX_LIST_COUNT],
                     owner_name=owner_name,

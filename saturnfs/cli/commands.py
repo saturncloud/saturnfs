@@ -3,12 +3,14 @@ import os
 import shutil
 import sys
 from glob import has_magic
-from typing import Optional
+from typing import Dict, Optional
 
 import click
+from fsspec import Callback
 from fsspec.callbacks import NoOpCallback
+from fsspec.implementations.local import make_path_posix
 from saturnfs import settings
-from saturnfs.cli.callback import FileOpCallback
+from saturnfs.cli.callback import FileOpCallback, file_op
 from saturnfs.cli.utils import (
     OutputFormats,
     print_file_table,
@@ -50,9 +52,10 @@ def copy(
         raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
 
     if quiet:
-        callback = NoOpCallback
+        callback = NoOpCallback()
     else:
-        callback = FileOpCallback
+        operation = file_op(src_is_local, dst_is_local)
+        callback = FileOpCallback(operation=operation)
 
     if src_is_local:
         sfs.put(
@@ -60,14 +63,14 @@ def copy(
             destination_path,
             recursive=recursive,
             part_size=part_size,
-            callback=callback(operation="upload"),
+            callback=callback,
         )
     elif dst_is_local:
         sfs.get(
             source_path,
             destination_path,
             recursive=recursive,
-            callback=callback(operation="download"),
+            callback=callback,
         )
     else:
         sfs.cp(
@@ -75,7 +78,7 @@ def copy(
             destination_path,
             recursive=recursive,
             part_size=part_size,
-            callback=callback(operation="copy"),
+            callback=callback,
         )
 
     if not quiet:
@@ -108,8 +111,11 @@ def move(
 
     if quiet:
         callback = NoOpCallback()
+        rm_callback = NoOpCallback()
     else:
-        callback = FileOpCallback(operation="move")
+        operation = file_op(src_is_local, dst_is_local)
+        callback = FileOpCallback(operation=operation)
+        rm_callback = FileOpCallback(operation="delete", inner=True, first_branch=True)
 
     if src_is_local:
         sfs.put(
@@ -119,13 +125,27 @@ def move(
             recursive=recursive,
             callback=callback,
         )
+        if isinstance(rm_callback, FileOpCallback):
+            kwargs: Dict[str, Callback] = {}
+            rm_callback.branch(make_path_posix(source_path), "", kwargs)
+            rm_callback = kwargs["callback"]
+            rm_callback.set_size(callback.size)
         if recursive:
             shutil.rmtree(source_path)
         else:
             os.remove(source_path)
+        rm_callback.relative_update(callback.size)
     elif dst_is_local:
-        sfs.get(source_path, destination_path, recursive=recursive, callback=callback)
-        sfs.rm(source_path, recursive=recursive)
+        sfs.get(
+            source_path,
+            destination_path,
+            recursive=recursive,
+            callback=callback,
+        )
+        if isinstance(rm_callback, FileOpCallback):
+            kwargs: Dict[str, Callback] = {}  # type: ignore[no-redef]
+            rm_callback.branch(source_path, "", kwargs)
+        sfs.rm(source_path, recursive=recursive, **kwargs)
     else:
         sfs.mv(
             source_path,
@@ -133,6 +153,7 @@ def move(
             part_size=part_size,
             recursive=recursive,
             callback=callback,
+            rm_callback=rm_callback,
         )
 
     if not quiet:
