@@ -1,6 +1,6 @@
-from glob import has_magic
 import json
 from enum import Enum
+from glob import has_magic
 from typing import Any, Dict, List, Optional, Union
 
 import click
@@ -32,7 +32,9 @@ def print_json(data: Union[List, Dict]):
 
 
 def print_file_table(
-    results: List[ObjectStorageInfo], human_readable: bool = False, relative_prefix: Optional[str] = None
+    results: List[ObjectStorageInfo],
+    human_readable: bool = False,
+    relative_prefix: Optional[str] = None,
 ):
     headers = ["LastModified", "Size", "RelativePath" if relative_prefix else "Path"]
     data: List[List[str]] = []
@@ -44,7 +46,7 @@ def print_file_table(
         if not info.is_dir:
             size = human_readable_format(info.size) if human_readable else str(info.size)
         if relative_prefix and info.name.startswith(relative_prefix):
-            path = info.name[len(relative_prefix):].lstrip("/")
+            path = info.name[len(relative_prefix) :].lstrip("/")
         else:
             path = info.name
         data.append([last_modified, size, path])
@@ -69,7 +71,9 @@ def print_upload_table(
             row.append(upload.copy_source.name if upload.copy_source else "")
         data.append(row)
 
-    tabulate(data, headers, justify={"Size": ">"}, minwidth={"ID": 32, "Expiration": 20, "Size": 10})
+    tabulate(
+        data, headers, justify={"Size": ">"}, minwidth={"ID": 32, "Expiration": 20, "Size": 10}
+    )
 
 
 def tabulate(
@@ -77,7 +81,7 @@ def tabulate(
     headers: List[str],
     rpadding: int = 4,
     justify: Optional[Dict[str, str]] = None,
-    minwidth: Optional[Dict[str, int]] = None
+    minwidth: Optional[Dict[str, int]] = None,
 ):
     justify = justify if justify else {}
     minwidth = minwidth if minwidth else {}

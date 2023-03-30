@@ -1,8 +1,8 @@
-from glob import has_magic
 import json
 import os
 import shutil
 import sys
+from glob import has_magic
 from typing import Optional
 
 import click

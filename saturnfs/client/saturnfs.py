@@ -1,9 +1,9 @@
 from __future__ import annotations
-from glob import has_magic
 
 import os
 import weakref
 from datetime import datetime
+from glob import has_magic
 from io import BytesIO, TextIOWrapper
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
@@ -92,9 +92,9 @@ class SaturnFS(AbstractFileSystem):
         )
 
         callback.set_size(len(rpaths))
-        for lpath, rpath in callback.wrap(zip(lpaths, rpaths)):
-            callback.branch(lpath, rpath, kwargs)
-            self.put_file(lpath, rpath, **kwargs)
+        for lp, rp in callback.wrap(zip(lpaths, rpaths)):
+            callback.branch(lp, rp, kwargs)
+            self.put_file(lp, rp, **kwargs)
 
     def copy(
         self,
@@ -140,9 +140,7 @@ class SaturnFS(AbstractFileSystem):
         maxdepth: Optional[int] = None,
         **kwargs,
     ):
-        self.copy(
-            path1, path2, recursive=recursive, maxdepth=maxdepth, **kwargs
-        )
+        self.copy(path1, path2, recursive=recursive, maxdepth=maxdepth, **kwargs)
         self.rm(path1, recursive=recursive, maxdepth=maxdepth)
 
     @overload
@@ -206,9 +204,9 @@ class SaturnFS(AbstractFileSystem):
         parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
         if parent_files is not None:
             files = [
-                f for f in parent_files
-                if f.name == path
-                or (f.name.rstrip("/") == path and f.is_dir)
+                f
+                for f in parent_files
+                if f.name == path or (f.name.rstrip("/") == path and f.is_dir)
             ]
             if len(files) == 0:
                 # parent dir was listed but did not contain this file
@@ -332,16 +330,22 @@ class SaturnFS(AbstractFileSystem):
         return []
 
     @overload
-    def glob(self, path: str, detail: Literal[True] = True, **kwargs) -> Dict[str, ObjectStorageInfo]:
+    def glob(
+        self, path: str, detail: Literal[True] = True, **kwargs
+    ) -> Dict[str, ObjectStorageInfo]:
         # dummy code for pylint
         return {}
 
     @overload
-    def glob(self, path: str, detail: bool = False, **kwargs) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
+    def glob(
+        self, path: str, detail: bool = False, **kwargs
+    ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
         # dummy code for pylint
         return []  # type: ignore[return-value]
 
-    def glob(self, path: str, detail: bool = False, **kwargs) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
+    def glob(
+        self, path: str, detail: bool = False, **kwargs
+    ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
         return super().glob(path, detail=detail, **kwargs)
 
     @overload
@@ -855,7 +859,7 @@ class SaturnFile(AbstractBufferedFile):
             num_presigned = num_completed
             self.presigned_parts = self.presigned_parts[:num_presigned]
         elif final and num_presigned >= total_parts:
-            if remainder > 0 and remainder != self.presigned_parts[total_parts-1].size:
+            if remainder > 0 and remainder != self.presigned_parts[total_parts - 1].size:
                 # Fetch new final part with the correct size
                 num_presigned = total_parts - 1
             else:

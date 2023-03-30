@@ -13,7 +13,12 @@ from saturnfs.schemas.download import (
     ObjectStorageBulkDownload,
     ObjectStoragePresignedDownload,
 )
-from saturnfs.schemas.list import ObjectStorageListResult, ObjectStorageOrgs, ObjectStorageSharedResult, Org
+from saturnfs.schemas.list import (
+    ObjectStorageListResult,
+    ObjectStorageOrgs,
+    ObjectStorageSharedResult,
+    Org,
+)
 from saturnfs.schemas.reference import (
     BulkObjectStorage,
     ObjectStorage,
@@ -154,10 +159,7 @@ class ObjectStorageClient:
 
     def orgs(self) -> List[Org]:
         result = OrgListAPI.get(self.session)
-        return [
-            org for org in ObjectStorageOrgs.load(result).orgs
-            if not org.locked
-        ]
+        return [org for org in ObjectStorageOrgs.load(result).orgs if not org.locked]
 
     def usage(self, owner_name: Optional[str] = None) -> ObjectStorageUsageResults:
         result = UsageAPI.get(self.session, owner_name=owner_name)
