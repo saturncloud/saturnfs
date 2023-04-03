@@ -744,6 +744,9 @@ class SaturnFile(AbstractBufferedFile):
         elif block_size > settings.S3_MAX_PART_SIZE:
             raise SaturnError(f"Max block size: {settings.S3_MIN_PART_SIZE}")
 
+        self.remote = ObjectStorage.parse(path)
+        self.size = size
+
         super().__init__(
             fs,
             path,
@@ -755,9 +758,6 @@ class SaturnFile(AbstractBufferedFile):
             size=size,
             **kwargs,
         )
-
-        self.remote = ObjectStorage.parse(path)
-        self.size = size
 
         # Upload data
         self.upload_id: str = ""
