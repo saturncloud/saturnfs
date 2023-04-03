@@ -571,7 +571,7 @@ class SaturnFS(AbstractFileSystem):
             )
         except SaturnError as e:
             if e.status == 404:
-                raise FileNotFoundError from e
+                raise FileNotFoundError(e.message) from e
             raise e
 
         size = sum(part.size for part in presigned_copy.parts)
