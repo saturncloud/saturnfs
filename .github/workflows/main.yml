@@ -14,9 +14,9 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2.1.1
         with:
           python-version: 3.7
-          miniconda-version: py37_4.9.2
+          miniconda-version: py37_4.10.3
           activate-environment: saturnfs
-          auto-update-conda: true
+          auto-update-conda: false
           environment-file: environment.test.yaml
       - name: Lint
         shell: bash -el {0}

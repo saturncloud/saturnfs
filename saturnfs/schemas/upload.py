@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import marshmallow_dataclass
 from saturnfs.schemas.base import DataclassSchema
-from saturnfs.schemas.reference import ObjectStorage
+from saturnfs.schemas.reference import ObjectStorage, ObjectStoragePrefix, full_path
 
 
 @marshmallow_dataclass.dataclass
@@ -43,6 +43,15 @@ class ObjectStorageCompletePart(DataclassSchema):
 class ObjectStorageUploadList(DataclassSchema):
     uploads: List[ObjectStorageUploadInfo]
 
+    @classmethod
+    def load_extended(
+        cls, data: Dict[str, Any], prefix: ObjectStoragePrefix
+    ) -> ObjectStorageUploadList:
+        uploads = data.get("uploads", [])
+        for upload in uploads:
+            upload["owner_name"] = prefix.owner_name
+        return cls.load(data)
+
 
 @marshmallow_dataclass.dataclass
 class ObjectStorageUploadInfo(DataclassSchema):
@@ -51,4 +60,16 @@ class ObjectStorageUploadInfo(DataclassSchema):
     size: Optional[int]
     part_size: int
     expires_at: datetime
-    copy_source: Optional[ObjectStorage] = None
+    copy_source: Optional[ObjectStorage]
+
+    # Not returned from API, added during load
+    owner_name: str = field()
+
+    @property
+    def name(self) -> str:
+        return full_path(self.owner_name, self.file_path)
+
+    def dump_extended(self) -> Dict[str, Any]:
+        data = self.dump()
+        data["name"] = self.name
+        return data

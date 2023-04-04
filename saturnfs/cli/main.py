@@ -11,6 +11,9 @@ def entrypoint():
     except SaturnError as e:
         click.echo(f"Error: {e.message}")
         sys.exit(1)
+    except FileNotFoundError as e:
+        click.echo(f"FileNotFoundError: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

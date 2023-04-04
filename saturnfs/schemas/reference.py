@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Tuple, Union
 
 import marshmallow_dataclass
 from saturnfs import settings
@@ -28,12 +28,12 @@ class ObjectStorage(DataclassSchema):
 
         return cls(**data)
 
-    def dump_ref(self) -> Dict[str, Any]:
-        return self.dump(only=["owner_name", "file_path"])
-
     @property
     def name(self) -> str:
-        return f"{self.owner_name}/{self.file_path}"
+        return full_path(self.owner_name, self.file_path)
+
+    def __fspath__(self) -> str:
+        return self.name
 
     def __str__(self) -> str:
         return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
@@ -56,12 +56,12 @@ class ObjectStoragePrefix(DataclassSchema):
         }
         return cls(**data)
 
-    def dump_ref(self) -> Dict[str, Any]:
-        return self.dump(only=["owner_name", "prefix"])
-
     @property
     def name(self) -> str:
-        return f"{self.owner_name}/{self.prefix}"
+        return full_path(self.owner_name, self.prefix)
+
+    def __fspath__(self) -> str:
+        return self.name
 
     def __str__(self) -> str:
         return f"{settings.SATURNFS_FILE_PREFIX}{self.name}"
@@ -104,3 +104,7 @@ def parse_remote(path: Union[str, ObjectStorage, ObjectStoragePrefix]) -> Tuple[
         path = path.prefix
 
     return (owner_name, path)
+
+
+def full_path(owner_name: str, path: str) -> str:
+    return f"{owner_name.rstrip('/')}/{path.lstrip('/')}"

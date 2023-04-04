@@ -62,3 +62,6 @@ class AWSPresignedClient:
         if not etag:
             raise SaturnError("Failed to parse etag from response", status=500)
         return etag
+
+    def close(self):
+        self.session.close()

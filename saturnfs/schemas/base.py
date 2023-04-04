@@ -1,5 +1,5 @@
 import json
-from typing import Any, ClassVar, Dict, Iterable, List, Optional, Type, TypeVar, Union
+from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, Union
 
 from marshmallow import EXCLUDE
 from marshmallow import Schema as BaseSchema
@@ -15,15 +15,16 @@ class DataclassSchema:
     """
 
     # For mypy. marshmallow_dataclass will replace this with the real schema
-    Schema: ClassVar[Type[BaseSchema]] = BaseSchema
+    Schema: ClassVar[Type[BaseSchema]]
 
     class Meta:
         ordered = True
+        unknown = EXCLUDE
 
     @classmethod
     def load(cls: Type[Self], data: Dict[str, Any], **kwargs) -> Self:
         # Exclude unknowns so old client version doesn't break if new data is added to schema
-        return cls.Schema(unknown=EXCLUDE).load(data, **kwargs)
+        return cls.Schema().load(data, **kwargs)
 
     @classmethod
     def loads(cls: Type[Self], data: Union[str, bytes], **kwargs) -> Self:
