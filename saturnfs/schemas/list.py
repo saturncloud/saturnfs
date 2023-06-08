@@ -117,5 +117,5 @@ class Org(DataclassSchema):
     name: str
     email: Optional[str]
     description: str
-    is_default: bool
+    is_primary: bool
     locked: bool
