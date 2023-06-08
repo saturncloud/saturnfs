@@ -12,8 +12,11 @@ class ExpiredSignature(SaturnError):
 
 
 class PathErrors:
-    INVALID_REMOTE_PATH = "Invalid remote path. Expected format is sfs://<org>/<identity>/..."
-    INVALID_REMOTE_FILE = (
-        "Invalid remote file path. Expected format is sfs://<org>/<identity>/<file_path>"
+    EXPECTED_REMOTE_PATH = "Expected format is sfs://<org>/<identity>/..."
+    EXPECTED_REMOTE_FILE = "Expected format is sfs://<org>/<identity>/<file_path>"
+
+    INVALID_REMOTE_PATH = f"Invalid remote path. {EXPECTED_REMOTE_PATH}"
+    INVALID_REMOTE_FILE = f"Invalid remote file path. {EXPECTED_REMOTE_FILE}"
+    AT_LEAST_ONE_REMOTE_PATH = (
+        f"Either source or destination must be a remote path. {EXPECTED_REMOTE_PATH}"
     )
-    AT_LEAST_ONE_REMOTE_PATH = "Either source or destination must be a remote path"
