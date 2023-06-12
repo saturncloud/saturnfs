@@ -1,4 +1,4 @@
-from io import BytesIO
+from io import BufferedWriter
 import os
 from datetime import datetime
 from typing import Any, BinaryIO, List, Optional, Tuple
@@ -79,15 +79,13 @@ class FileTransferClient:
             os.makedirs(dirname, exist_ok=True)
 
         with open(local_path, "wb") as f:
-            self.download_outfile(
-                presigned_download, f, callback=callback, block_size=block_size
-            )
+            self.download_outfile(presigned_download, f, callback=callback, block_size=block_size)
         set_last_modified(local_path, presigned_download.updated_at)
 
     def download_outfile(
         self,
         presigned_download: ObjectStoragePresignedDownload,
-        outfile: BytesIO,
+        outfile: BufferedWriter,
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
     ):

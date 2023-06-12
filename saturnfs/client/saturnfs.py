@@ -4,7 +4,7 @@ import os
 import weakref
 from datetime import datetime
 from glob import has_magic
-from io import BytesIO, TextIOWrapper
+from io import BufferedWriter, BytesIO, TextIOWrapper
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
 
@@ -601,7 +601,7 @@ class SaturnFS(AbstractFileSystem):
         rpath: str,
         lpath: str,
         callback: Callback = DEFAULT_CALLBACK,
-        outfile: Optional[BytesIO] = None,
+        outfile: Optional[BufferedWriter] = None,
         **kwargs,
     ):
         remote = ObjectStorage.parse(rpath)
