@@ -604,7 +604,12 @@ class SaturnFS(AbstractFileSystem):
         outfile: Optional[BytesIO] = None,
         **kwargs,
     ):
-        super().get_file(rpath, lpath, callback=callback, outfile=outfile, **kwargs)
+        remote = ObjectStorage.parse(rpath)
+        download = self.object_storage_client.download_file(remote)
+        if outfile is not None:
+            self.file_transfer.download_outfile(download, outfile, callback=callback, **kwargs)
+        else:
+            self.file_transfer.download(download, lpath, callback=callback, **kwargs)
 
     def get_bulk(self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK):
         callback.set_size(len(lpaths))
