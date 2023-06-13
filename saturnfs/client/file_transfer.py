@@ -1,6 +1,6 @@
-from io import BufferedWriter
 import os
 from datetime import datetime
+from io import BufferedWriter
 from typing import Any, BinaryIO, List, Optional, Tuple
 
 from fsspec import Callback
