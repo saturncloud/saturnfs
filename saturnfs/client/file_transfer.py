@@ -1,8 +1,10 @@
 import os
 from datetime import datetime
+from io import BufferedWriter
 from typing import Any, BinaryIO, List, Optional, Tuple
 
 from fsspec import Callback
+from saturnfs import settings
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
 from saturnfs.schemas import (
@@ -70,26 +72,35 @@ class FileTransferClient:
         presigned_download: ObjectStoragePresignedDownload,
         local_path: str,
         callback: Optional[Callback] = None,
+        block_size: int = settings.S3_MIN_PART_SIZE,
     ):
         dirname = os.path.dirname(local_path)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
+        with open(local_path, "wb") as f:
+            self.download_outfile(presigned_download, f, callback=callback, block_size=block_size)
+        set_last_modified(local_path, presigned_download.updated_at)
+
+    def download_outfile(
+        self,
+        presigned_download: ObjectStoragePresignedDownload,
+        outfile: BufferedWriter,
+        callback: Optional[Callback] = None,
+        block_size: int = settings.S3_MIN_PART_SIZE,
+    ):
         response = self.aws.get(presigned_download.url, stream=True)
         if callback is not None:
             content_length = response.headers.get("Content-Length")
             callback.set_size(int(content_length) if content_length else None)
 
-        with open(local_path, "wb") as f:
-            for chunk in response.iter_content(None):
-                chunk_size = f.write(chunk)
-                if callback is not None:
-                    callback.relative_update(chunk_size)
+        for chunk in response.iter_content(block_size):
+            bytes_written = outfile.write(chunk)
+            if callback is not None:
+                callback.relative_update(bytes_written)
 
         if callback is not None and callback.size == 0:
             callback.relative_update(0)
-
-        set_last_modified(local_path, presigned_download.updated_at)
 
     def close(self):
         self.aws.close()

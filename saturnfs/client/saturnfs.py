@@ -4,7 +4,7 @@ import os
 import weakref
 from datetime import datetime
 from glob import has_magic
-from io import BytesIO, TextIOWrapper
+from io import BufferedWriter, BytesIO, TextIOWrapper
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
 
@@ -601,10 +601,15 @@ class SaturnFS(AbstractFileSystem):
         rpath: str,
         lpath: str,
         callback: Callback = DEFAULT_CALLBACK,
-        outfile: Optional[BytesIO] = None,
+        outfile: Optional[BufferedWriter] = None,
         **kwargs,
     ):
-        super().get_file(rpath, lpath, callback=callback, outfile=outfile, **kwargs)
+        remote = ObjectStorage.parse(rpath)
+        download = self.object_storage_client.download_file(remote)
+        if outfile is not None:
+            self.file_transfer.download_outfile(download, outfile, callback=callback, **kwargs)
+        else:
+            self.file_transfer.download(download, lpath, callback=callback, **kwargs)
 
     def get_bulk(self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK):
         callback.set_size(len(lpaths))
