@@ -846,7 +846,7 @@ class SaturnFile(AbstractBufferedFile):
         if self.presigned_get is None:
             self._presign_download()
 
-        headers = {"Range": f"bytes={start}-{end}"}
+        headers = {"Range": f"bytes={start}-{end - 1}"}
         try:
             response = self.fs.file_transfer.aws.get(self.presigned_get, headers=headers)
         except ExpiredSignature:
