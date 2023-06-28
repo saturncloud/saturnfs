@@ -8,6 +8,7 @@ from io import BufferedWriter, BytesIO, TextIOWrapper
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
 
+from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem
@@ -442,6 +443,17 @@ class SaturnFS(AbstractFileSystem):
                 return r
         raise FileNotFoundError(path)
 
+    def _info_from_cache(self, path: str) -> Optional[ObjectStorageInfo]:
+        path = self._strip_protocol(path)
+        results = self._ls_from_cache(self._parent(path))
+        if results is None:
+            return None
+
+        for r in results:
+            if r.name.rstrip("/") == path:
+                return r
+        return None
+
     @overload
     def open(
         self,
@@ -712,6 +724,18 @@ class SaturnFS(AbstractFileSystem):
 
         super().invalidate_cache(path)
 
+    def validate_cache(self, path: str, size: int, updated_at: datetime) -> bool:
+        """
+        Compare cached file results against known values to determine if the cache
+        should be invalidated.
+        """
+        info = self._info_from_cache(path)
+        if info is not None:
+            if info.size != size or info.updated_at != updated_at:
+                self.invalidate_cache(path)
+                return True
+        return False
+
 
 class SaturnFile(AbstractBufferedFile):
     """
@@ -719,10 +743,16 @@ class SaturnFile(AbstractBufferedFile):
     """
 
     fs: SaturnFS
-    buffer: BytesIO
-    blocksize: int
-    offset: Optional[int] = None
     path: str
+    blocksize: int
+
+    # Write only
+    buffer: BytesIO
+    # Read only
+    cache: BaseCache
+
+    size: Optional[int] = None
+    offset: Optional[int] = None
 
     def __init__(
         self,
@@ -750,7 +780,12 @@ class SaturnFile(AbstractBufferedFile):
             raise SaturnError(f"Max block size: {settings.S3_MIN_PART_SIZE}")
 
         self.remote = ObjectStorage.parse(path)
-        self.size = size
+        if mode == "rb":
+            # Prefetch download URL and size to skip the extra info request
+            # which could retrieve stale values from the ls cache
+            presigned_download = self._presign_download()
+            if size is None:
+                size = presigned_download.size
 
         super().__init__(
             fs,
@@ -770,7 +805,7 @@ class SaturnFile(AbstractBufferedFile):
         self.completed_parts: List[ObjectStorageCompletePart] = []
 
         # Download data
-        self.presigned_get: Optional[str] = None
+        self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
 
     def _upload_chunk(self, final: bool = False) -> bool:
         num_bytes = self.buffer.tell()
@@ -843,20 +878,24 @@ class SaturnFile(AbstractBufferedFile):
         self.upload_id = presigned_upload.object_storage_upload_id
 
     def _fetch_range(self, start: int, end: int):
-        if self.presigned_get is None:
+        if self.presigned_download is None:
             self._presign_download()
 
         headers = {"Range": f"bytes={start}-{end}"}
         try:
-            response = self.fs.file_transfer.aws.get(self.presigned_get, headers=headers)
+            response = self.fs.file_transfer.aws.get(self.presigned_download.url, headers=headers)
         except ExpiredSignature:
             self._presign_download()
-            response = self.fs.file_transfer.aws.get(self.presigned_get, headers=headers)
+            response = self.fs.file_transfer.aws.get(self.presigned_download.url, headers=headers)
 
         return response.content
 
-    def _presign_download(self):
-        self.presigned_get = self.fs.object_storage_client.download_file(self.remote).url
+    def _presign_download(self) -> ObjectStoragePresignedDownload:
+        self.presigned_download = self.fs.object_storage_client.download_file(self.remote)
+        self.fs.validate_cache(
+            self.path, self.presigned_download.size, self.presigned_download.updated_at
+        )
+        return self.presigned_download
 
     def _presign_upload_parts(self, num_bytes: int, final: bool = False, force: bool = False):
         if self.blocksize > 0:

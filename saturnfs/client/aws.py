@@ -35,7 +35,7 @@ class AWSPresignedClient:
         if not response.ok:
             if self.is_expired(response):
                 raise ExpiredSignature()
-            raise SaturnError(response.text, status=500)
+            raise SaturnError(response.text, status=response.status_code)
 
     def is_expired(self, response: Response) -> bool:
         if response.status_code == 403:
