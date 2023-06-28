@@ -37,11 +37,11 @@ class SaturnFS(AbstractFileSystem):
     blocksize = settings.S3_MIN_PART_SIZE
     protocol = "sfs"
 
-    def __init__(self):
+    def __init__(self, *args, **storage_options):
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
         weakref.finalize(self, self.close)
-        super().__init__()
+        super().__init__(*args, **storage_options)
 
     @property
     def fsid(self) -> str:
@@ -779,6 +779,8 @@ class SaturnFile(AbstractBufferedFile):
         elif block_size > settings.S3_MAX_PART_SIZE:
             raise SaturnError(f"Max block size: {settings.S3_MIN_PART_SIZE}")
 
+        self.fs = fs
+        self.path = path
         self.remote = ObjectStorage.parse(path)
         if mode == "rb":
             # Prefetch download URL and size to skip the extra info request
