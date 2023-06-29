@@ -886,7 +886,7 @@ class SaturnFile(AbstractBufferedFile):
 
     def _fetch_range(self, start: int, end: int):
         presigned_download = self.presigned_download or self._presign_download()
-        headers = {"Range": f"bytes={start}-{end}"}
+        headers = {"Range": f"bytes={start}-{end - 1}"}
         try:
             response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
         except ExpiredSignature:
