@@ -790,6 +790,7 @@ class SaturnFile(AbstractBufferedFile):
             presigned_download = self._presign_download()
             if size is None:
                 size = presigned_download.size
+        self.size = size
 
         super().__init__(
             fs,
