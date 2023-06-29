@@ -611,7 +611,7 @@ class SaturnFS(AbstractFileSystem):
     def get_file(
         self,
         rpath: str,
-        lpath: str,
+        lpath: Optional[str],
         callback: Callback = DEFAULT_CALLBACK,
         outfile: Optional[BufferedWriter] = None,
         **kwargs,
@@ -619,9 +619,11 @@ class SaturnFS(AbstractFileSystem):
         remote = ObjectStorage.parse(rpath)
         download = self.object_storage_client.download_file(remote)
         if outfile is not None:
-            self.file_transfer.download_outfile(download, outfile, callback=callback, **kwargs)
-        else:
+            self.file_transfer.download_to_writer(download, outfile, callback=callback, **kwargs)
+        elif lpath is not None:
             self.file_transfer.download(download, lpath, callback=callback, **kwargs)
+        else:
+            raise SaturnError("Either lpath or outfile is required")
 
     def get_bulk(self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK):
         callback.set_size(len(lpaths))
@@ -803,8 +805,8 @@ class SaturnFile(AbstractBufferedFile):
 
         # Upload data
         self.upload_id: str = ""
-        self.presigned_parts: List[ObjectStoragePresignedPart] = []
-        self.completed_parts: List[ObjectStorageCompletePart] = []
+        self.presigned_upload_parts: List[ObjectStoragePresignedPart] = []
+        self.completed_upload_parts: List[ObjectStorageCompletePart] = []
 
         # Download data
         self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
@@ -819,9 +821,9 @@ class SaturnFile(AbstractBufferedFile):
             self.buffer.seek(0)
             data = self.buffer.read(self.blocksize)
 
-        if num_bytes > 0 or final and len(self.completed_parts) == 0:
-            part_num = len(self.completed_parts) + 1
-            self._presign_upload_parts(num_bytes, final=final)
+        if num_bytes > 0 or final and len(self.completed_upload_parts) == 0:
+            part_num = len(self.completed_upload_parts) + 1
+            self._check_upload_parts(num_bytes, final=final)
 
             while data is not None:
                 self._upload_part(data, part_num, num_bytes, final)
@@ -852,20 +854,22 @@ class SaturnFile(AbstractBufferedFile):
         self, data: bytes, part_num: int, total_bytes: int, final: bool, retries: int = 5
     ):
         while retries > 0:
-            part = self.presigned_parts[part_num - 1]
+            part = self.presigned_upload_parts[part_num - 1]
             try:
                 completed_part = self.fs.file_transfer.upload_part(data, part)
             except ExpiredSignature:
-                self._presign_upload_parts(total_bytes, final=final, force=True)
+                self._check_upload_parts(total_bytes, final=final, refresh=True)
             else:
-                self.completed_parts.append(completed_part)
+                self.completed_upload_parts.append(completed_part)
                 return
 
             retries -= 1
 
     def commit(self):
         if self.upload_id:
-            self.fs.object_storage_client.complete_upload(self.upload_id, self.completed_parts)
+            self.fs.object_storage_client.complete_upload(
+                self.upload_id, self.completed_upload_parts
+            )
             self.fs.invalidate_cache(self.path)
 
     def discard(self):
@@ -876,7 +880,7 @@ class SaturnFile(AbstractBufferedFile):
         presigned_upload = self.fs.object_storage_client.start_upload(
             self.remote, self.size, self.blocksize
         )
-        self.presigned_parts = presigned_upload.parts
+        self.presigned_upload_parts = presigned_upload.parts
         self.upload_id = presigned_upload.object_storage_upload_id
 
     def _fetch_range(self, start: int, end: int):
@@ -896,7 +900,7 @@ class SaturnFile(AbstractBufferedFile):
         self.presigned_download = presigned_download
         return presigned_download
 
-    def _presign_upload_parts(self, num_bytes: int, final: bool = False, force: bool = False):
+    def _check_upload_parts(self, num_bytes: int, final: bool = False, refresh: bool = False):
         if self.blocksize > 0:
             num_parts = int(num_bytes / self.blocksize)
             remainder = num_bytes % self.blocksize
@@ -907,34 +911,34 @@ class SaturnFile(AbstractBufferedFile):
         if final and remainder > 0:
             num_parts += 1
 
-        num_completed = len(self.completed_parts)
-        num_presigned = len(self.presigned_parts)
+        num_completed = len(self.completed_upload_parts)
+        num_presigned = len(self.presigned_upload_parts)
         last_part_size = remainder if final and remainder > 0 else None
         total_parts = num_completed + num_parts
 
-        if force:
+        if refresh:
             # Throw out all unused parts (expired)
             num_presigned = num_completed
-            self.presigned_parts = self.presigned_parts[:num_presigned]
+            self.presigned_upload_parts = self.presigned_upload_parts[:num_presigned]
         elif final and num_presigned >= total_parts:
-            if remainder > 0 and remainder != self.presigned_parts[total_parts - 1].size:
+            if remainder > 0 and remainder != self.presigned_upload_parts[total_parts - 1].size:
                 # Fetch new final part with the correct size
                 num_presigned = total_parts - 1
             else:
                 num_presigned = total_parts
 
             # Throw out extra presigned parts
-            self.presigned_parts = self.presigned_parts[:num_presigned]
+            self.presigned_upload_parts = self.presigned_upload_parts[:num_presigned]
 
         # Fetch new parts
         if num_presigned < total_parts:
             remaining_presigned = num_presigned - num_completed
             min_required = num_parts - remaining_presigned
-            self._fetch_parts(
+            self._presign_upload(
                 num_completed + 1, min_required, final=final, last_part_size=last_part_size
             )
 
-    def _fetch_parts(
+    def _presign_upload(
         self,
         first_part: int,
         min_parts: int,
@@ -976,4 +980,4 @@ class SaturnFile(AbstractBufferedFile):
             retries -= 1
         if presigned_upload is None:
             raise SaturnError("Failed to retrieve presigned upload")
-        self.presigned_parts.extend(presigned_upload.parts)
+        self.presigned_upload_parts.extend(presigned_upload.parts)

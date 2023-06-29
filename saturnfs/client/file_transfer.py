@@ -79,10 +79,10 @@ class FileTransferClient:
             os.makedirs(dirname, exist_ok=True)
 
         with open(local_path, "wb") as f:
-            self.download_outfile(presigned_download, f, callback=callback, block_size=block_size)
+            self.download_to_writer(presigned_download, f, callback=callback, block_size=block_size)
         set_last_modified(local_path, presigned_download.updated_at)
 
-    def download_outfile(
+    def download_to_writer(
         self,
         presigned_download: ObjectStoragePresignedDownload,
         outfile: BufferedWriter,
