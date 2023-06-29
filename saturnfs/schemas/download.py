@@ -25,6 +25,7 @@ class ObjectStorageBulkDownload(DataclassSchema):
 @marshmallow_dataclass.dataclass
 class ObjectStoragePresignedDownload(DataclassSchema):
     file_path: str
+    size: int
     updated_at: datetime
     url: str
 
