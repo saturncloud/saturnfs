@@ -726,7 +726,7 @@ class SaturnFS(AbstractFileSystem):
 
         super().invalidate_cache(path)
 
-    def validate_cache(self, path: str, size: int, updated_at: datetime) -> bool:
+    def validate_cache(self, path: str, size: int, updated_at: datetime):
         """
         Compare cached file results against known values to determine if the cache
         should be invalidated.
@@ -735,8 +735,6 @@ class SaturnFS(AbstractFileSystem):
         if info is not None:
             if info.size != size or info.updated_at != updated_at:
                 self.invalidate_cache(path)
-                return True
-        return False
 
 
 class SaturnFile(AbstractBufferedFile):
