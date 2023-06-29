@@ -880,24 +880,21 @@ class SaturnFile(AbstractBufferedFile):
         self.upload_id = presigned_upload.object_storage_upload_id
 
     def _fetch_range(self, start: int, end: int):
-        if self.presigned_download is None:
-            self._presign_download()
-
+        presigned_download = self.presigned_download or self._presign_download()
         headers = {"Range": f"bytes={start}-{end}"}
         try:
-            response = self.fs.file_transfer.aws.get(self.presigned_download.url, headers=headers)
+            response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
         except ExpiredSignature:
-            self._presign_download()
-            response = self.fs.file_transfer.aws.get(self.presigned_download.url, headers=headers)
+            presigned_download = self._presign_download()
+            response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
 
         return response.content
 
     def _presign_download(self) -> ObjectStoragePresignedDownload:
-        self.presigned_download = self.fs.object_storage_client.download_file(self.remote)
-        self.fs.validate_cache(
-            self.path, self.presigned_download.size, self.presigned_download.updated_at
-        )
-        return self.presigned_download
+        presigned_download = self.fs.object_storage_client.download_file(self.remote)
+        self.fs.validate_cache(self.path, presigned_download.size, presigned_download.updated_at)
+        self.presigned_download = presigned_download
+        return presigned_download
 
     def _presign_upload_parts(self, num_bytes: int, final: bool = False, force: bool = False):
         if self.blocksize > 0:
@@ -916,7 +913,7 @@ class SaturnFile(AbstractBufferedFile):
         total_parts = num_completed + num_parts
 
         if force:
-            # Throw out all unsued parts (expired)
+            # Throw out all unused parts (expired)
             num_presigned = num_completed
             self.presigned_parts = self.presigned_parts[:num_presigned]
         elif final and num_presigned >= total_parts:
