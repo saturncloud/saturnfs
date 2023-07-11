@@ -31,7 +31,6 @@ class FileTransferClient:
 
     def __init__(self):
         self.aws = AWSPresignedClient()
-        self.max_workers = 10
 
     def upload(
         self, local_path: str, presigned_upload: ObjectStoragePresignedUpload, file_offset: int = 0
@@ -88,9 +87,7 @@ class FileTransferClient:
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
-        # TODO: Pick a reasonable thing here
-        allow_parallel = True
-        if allow_parallel and presigned_download.size >= 5 * settings.S3_MIN_PART_SIZE:
+        if presigned_download.size >= 5 * settings.S3_MIN_PART_SIZE:
             self._parallel_download(presigned_download, local_path, block_size, callback=callback)
         else:
             with open(local_path, "wb") as f:
@@ -120,7 +117,7 @@ class FileTransferClient:
             callback.relative_update(0)
         response.close()
 
-    def _parallel_download(self, presigned_download: ObjectStoragePresignedDownload, local_path: str, block_size: int, callback: Optional[Callback] = None):
+    def _parallel_download(self, presigned_download: ObjectStoragePresignedDownload, local_path: str, block_size: int, max_workers: int = 10, callback: Optional[Callback] = None):
         filename = os.path.basename(local_path)
         parent_dir = os.path.dirname(local_path)
         tmp_dir = os.path.join(parent_dir, f".saturnfs_{filename}")
@@ -128,7 +125,7 @@ class FileTransferClient:
 
         num_chunks = ceil(presigned_download.size / block_size)
         last_chunk_size = presigned_download.size % block_size
-        num_workers = min(num_chunks, self.max_workers)
+        num_workers = min(num_chunks, max_workers)
 
         download_queue: Queue[Optional[DownloadChunk]] = Queue(2 * num_workers)
         completed_queue: PriorityQueue[DownloadChunk] = PriorityQueue()
@@ -145,6 +142,7 @@ class FileTransferClient:
             "presigned_download": presigned_download,
             "download_queue": download_queue,
             "completed_queue": completed_queue,
+            "block_size": block_size,
         }
 
         Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
@@ -185,8 +183,8 @@ class FileTransferClient:
         presigned_download: ObjectStoragePresignedDownload,
         download_queue: Queue[DownloadChunk],
         completed_queue: PriorityQueue[DownloadChunk],
+        block_size: int,
     ):
-        # TODO: How to handle URL expiration?
         session = Session()
         while True:
             chunk = download_queue.get()
@@ -200,7 +198,7 @@ class FileTransferClient:
                 finally:
                     break
 
-            start = (chunk.part_number - 1) * chunk.chunk_size
+            start = (chunk.part_number - 1) * block_size
             end = start + chunk.chunk_size
             if end > presigned_download.size:
                 end = presigned_download.size
