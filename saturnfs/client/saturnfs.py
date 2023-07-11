@@ -28,9 +28,8 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadInfo,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
-from typing_extensions import Literal
-
 from saturnfs.utils import byte_range_header
+from typing_extensions import Literal
 
 DEFAULT_CALLBACK = NoOpCallback()
 

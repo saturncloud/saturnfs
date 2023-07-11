@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import heapq
-from math import ceil, remainder
 import os
+import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from io import BufferedWriter
+from math import ceil
 from queue import Full, PriorityQueue, Queue
 from threading import Thread
 from typing import Any, BinaryIO, Dict, List, Optional, Tuple
@@ -91,7 +92,9 @@ class FileTransferClient:
             self._parallel_download(presigned_download, local_path, block_size, callback=callback)
         else:
             with open(local_path, "wb") as f:
-                self.download_to_writer(presigned_download, f, callback=callback, block_size=block_size)
+                self.download_to_writer(
+                    presigned_download, f, callback=callback, block_size=block_size
+                )
         set_last_modified(local_path, presigned_download.updated_at)
 
     def download_to_writer(
@@ -117,12 +120,16 @@ class FileTransferClient:
             callback.relative_update(0)
         response.close()
 
-    def _parallel_download(self, presigned_download: ObjectStoragePresignedDownload, local_path: str, block_size: int, max_workers: int = 10, callback: Optional[Callback] = None):
+    def _parallel_download(
+        self,
+        presigned_download: ObjectStoragePresignedDownload,
+        local_path: str,
+        block_size: int,
+        max_workers: int = 10,
+        callback: Optional[Callback] = None,
+    ):
         filename = os.path.basename(local_path)
         parent_dir = os.path.dirname(local_path)
-        tmp_dir = os.path.join(parent_dir, f".saturnfs_{filename}")
-        os.makedirs(tmp_dir, exist_ok=True)
-
         num_chunks = ceil(presigned_download.size / block_size)
         last_chunk_size = presigned_download.size % block_size
         num_workers = min(num_chunks, max_workers)
@@ -130,26 +137,29 @@ class FileTransferClient:
         download_queue: Queue[Optional[DownloadChunk]] = Queue(2 * num_workers)
         completed_queue: PriorityQueue[DownloadChunk] = PriorityQueue()
 
-        producer_kwargs = {
-            "download_queue": download_queue,
-            "tmp_dir": tmp_dir,
-            "block_size": block_size,
-            "num_chunks": num_chunks,
-            "last_chunk_size": last_chunk_size,
-            "num_workers": num_workers,
-        }
-        worker_kwargs = {
-            "presigned_download": presigned_download,
-            "download_queue": download_queue,
-            "completed_queue": completed_queue,
-            "block_size": block_size,
-        }
+        # Downloads are non-resumable for now
+        with tempfile.TemporaryDirectory(
+            prefix=f".saturnfs_{filename}_", dir=parent_dir
+        ) as tmp_dir:
+            producer_kwargs = {
+                "download_queue": download_queue,
+                "tmp_dir": tmp_dir,
+                "block_size": block_size,
+                "num_chunks": num_chunks,
+                "last_chunk_size": last_chunk_size,
+                "num_workers": num_workers,
+            }
+            worker_kwargs = {
+                "presigned_download": presigned_download,
+                "download_queue": download_queue,
+                "completed_queue": completed_queue,
+                "block_size": block_size,
+            }
 
-        Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
-        for _ in range(num_workers):
-            Thread(target=self._download_worker, kwargs=worker_kwargs, daemon=True).start()
-        self._reconstruct(completed_queue, local_path, num_chunks, callback=callback)
-        os.rmdir(tmp_dir)
+            Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
+            for _ in range(num_workers):
+                Thread(target=self._download_worker, kwargs=worker_kwargs, daemon=True).start()
+            self._reconstruct(completed_queue, local_path, num_chunks, callback=callback)
 
     def _download_producer(
         self,
@@ -160,7 +170,10 @@ class FileTransferClient:
         last_chunk_size: int,
         num_workers: int,
     ):
-        # TODO: Handle resumed download
+        """
+        Generate chunks on download queue to be downloaded
+        Waits for work to be completed, and signals worker shutdown at the end.
+        """
         for i in range(num_chunks):
             if i == num_chunks - 1 and last_chunk_size:
                 chunk_size = last_chunk_size
@@ -185,6 +198,10 @@ class FileTransferClient:
         completed_queue: PriorityQueue[DownloadChunk],
         block_size: int,
     ):
+        """
+        Pull chunks from the download queue, and write the associated byte range to a temp file.
+        Push completed chunk onto the completed queue to be reconstructed.
+        """
         session = Session()
         while True:
             chunk = download_queue.get()
@@ -205,9 +222,7 @@ class FileTransferClient:
             headers = byte_range_header(start, end)
 
             with open(chunk.tmp_path, "wb") as f:
-                self.download_to_writer(
-                    presigned_download, f, headers=headers, session=session
-                )
+                self.download_to_writer(presigned_download, f, headers=headers, session=session)
 
             download_queue.task_done()
             completed_queue.put(chunk)
@@ -218,10 +233,13 @@ class FileTransferClient:
         completed_queue: PriorityQueue[DownloadChunk],
         local_path: str,
         num_chunks: int,
-        next_part: int = 1,
         callback: Optional[Callback] = None,
     ):
+        """
+        Pulls chunks from the completed queue and appends them in order to the given file path
+        """
         done = False
+        next_part: int = 1
         heap: List[DownloadChunk] = []
 
         def _mv(tmp_path: str, f: BufferedWriter):
@@ -290,6 +308,7 @@ class DownloadChunk:
     """
     Stores information for parallel chunk download
     """
+
     part_number: int
     chunk_size: int
     tmp_path: str
