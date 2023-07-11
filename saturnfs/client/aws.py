@@ -15,9 +15,15 @@ class AWSPresignedClient:
         self.session = Session()
 
     def get(
-        self, url: str, headers: Optional[Dict[str, str]] = None, stream: bool = False
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        stream: bool = False,
+        session: Optional[Session] = None,
     ) -> Response:
-        response = self.session.get(url, headers=headers, stream=stream)
+        if not session:
+            session = self.session
+        response = session.get(url, headers=headers, stream=stream)
         self.check_errors(response)
         return response
 
@@ -26,8 +32,11 @@ class AWSPresignedClient:
         url: str,
         data: Optional[Any] = None,
         headers: Optional[Dict[str, str]] = None,
+        session: Optional[Session] = None,
     ) -> Response:
-        response = self.session.put(url, data, headers=headers)
+        if not session:
+            session = self.session
+        response = session.put(url, data, headers=headers)
         self.check_errors(response)
         return response
 
