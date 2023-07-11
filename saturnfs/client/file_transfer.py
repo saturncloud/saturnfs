@@ -9,7 +9,7 @@ from io import BufferedWriter
 from math import ceil
 from queue import Full, PriorityQueue, Queue
 from threading import Thread
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple
+from typing import Any, BinaryIO, List, Optional, Tuple
 
 from fsspec import Callback
 from requests import Session
@@ -212,8 +212,7 @@ class FileTransferClient:
                     download_queue.put_nowait(None)
                 except Full:
                     pass
-                finally:
-                    break
+                break
 
             start = (chunk.part_number - 1) * block_size
             end = start + chunk.chunk_size
