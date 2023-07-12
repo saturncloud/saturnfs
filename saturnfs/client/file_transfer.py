@@ -163,7 +163,7 @@ class FileTransferClient:
 
     def _download_producer(
         self,
-        download_queue: Queue[DownloadChunk],
+        download_queue: Queue[Optional[DownloadChunk]],
         tmp_dir: str,
         block_size: int,
         num_chunks: int,
