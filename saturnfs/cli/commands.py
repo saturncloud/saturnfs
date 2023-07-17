@@ -283,8 +283,8 @@ def exists(path: str):
 
 
 @cli.command("usage")
-@click.option("--owner", type=str, help="Owner name '<org>/<identity>'")
-def storage_usage(owner_name: Optional[str] = None):
+@click.option("--owner", type=str, default=None, help="Owner name '<org>/<identity>'")
+def storage_usage(owner: Optional[str] = None):
     sfs = SaturnFS()
-    usage = sfs.usage(owner_name)
+    usage = sfs.usage(owner)
     click.echo(json.dumps(usage.dump(), indent=2))

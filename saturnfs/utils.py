@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Dict
 
 
 class Units(int, Enum):
@@ -16,3 +17,10 @@ def human_readable_format(size: float):
     formatted = f"{size:.2f}"
     formatted = formatted.rstrip("0").rstrip(".")
     return f"{formatted} {unit}"
+
+
+def byte_range_header(start: int, end: int) -> Dict[str, str]:
+    """
+    HTTP byte range header with non-inclusive end
+    """
+    return {"Range": f"bytes={start}-{end - 1}"}

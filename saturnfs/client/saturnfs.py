@@ -28,6 +28,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadInfo,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
+from saturnfs.utils import byte_range_header
 from typing_extensions import Literal
 
 DEFAULT_CALLBACK = NoOpCallback()
@@ -884,7 +885,7 @@ class SaturnFile(AbstractBufferedFile):
 
     def _fetch_range(self, start: int, end: int):
         presigned_download = self.presigned_download or self._presign_download()
-        headers = {"Range": f"bytes={start}-{end - 1}"}
+        headers = byte_range_header(start, end)
         try:
             response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
         except ExpiredSignature:
