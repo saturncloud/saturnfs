@@ -83,13 +83,20 @@ class FileTransferClient:
         local_path: str,
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
+        max_workers: int = 10,
     ):
         dirname = os.path.dirname(local_path)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
 
-        if presigned_download.size >= 5 * settings.S3_MIN_PART_SIZE:
-            self._parallel_download(presigned_download, local_path, block_size, callback=callback)
+        if max_workers > 1 and presigned_download.size >= 3 * block_size:
+            self._parallel_download(
+                presigned_download,
+                local_path,
+                block_size,
+                callback=callback,
+                max_workers=max_workers,
+            )
         else:
             with open(local_path, "wb") as f:
                 self.download_to_writer(
