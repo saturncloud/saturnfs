@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
-from fsspec.spec import AbstractBufferedFile, AbstractFileSystem
+from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
 from fsspec.utils import other_paths
 from saturnfs import settings
 from saturnfs.client.file_transfer import FileTransferClient
@@ -34,7 +34,14 @@ from typing_extensions import Literal
 DEFAULT_CALLBACK = NoOpCallback()
 
 
-class SaturnFS(AbstractFileSystem):
+class _CachedTyped(_Cached):
+    # Add typing to the metaclass to get around an issue with pylance
+    # https://github.com/microsoft/pylance-release/issues/4384
+    def __call__(cls, *args, **kwargs) -> SaturnFS:
+        return super().__call__(*args, **kwargs)
+
+
+class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):
     blocksize = settings.S3_MIN_PART_SIZE
     protocol = "sfs"
 
