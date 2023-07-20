@@ -37,11 +37,11 @@ DEFAULT_CALLBACK = NoOpCallback()
 class _CachedTyped(_Cached):
     # Add typing to the metaclass to get around an issue with pylance
     # https://github.com/microsoft/pylance-release/issues/4384
-    def __call__(cls, *args, **kwargs) -> SaturnFS:
+    def __call__(cls, *args, **kwargs) -> SaturnFS:  # pylint: disable=no-self-argument
         return super().__call__(*args, **kwargs)
 
 
-class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):
+class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=invalid-metaclass
     blocksize = settings.S3_MIN_PART_SIZE
     protocol = "sfs"
 
