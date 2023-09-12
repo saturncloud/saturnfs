@@ -942,7 +942,7 @@ class SaturnFile(AbstractBufferedFile):
             remaining_presigned = num_presigned - num_completed
             min_required = num_parts - remaining_presigned
             self._presign_upload(
-                num_completed + 1, min_required, final=final, last_part_size=last_part_size
+                num_presigned + 1, min_required, final=final, last_part_size=last_part_size
             )
 
     def _presign_upload(
