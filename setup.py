@@ -7,6 +7,7 @@ install_requires = [
     "requests",
     "marshmallow>=3.10.0,<4.0.0",
     "marshmallow-dataclass",
+    "fsspec"
 ]
 
 
@@ -23,6 +24,9 @@ setup(
     entry_points={
         "console_scripts": [
             "saturnfs=saturnfs.cli.main:entrypoint",
+        ],
+        'fsspec.specs': [
+            'sfs=saturnfs.SaturnFS',
         ],
     },
     url="https://saturncloud.io/",
