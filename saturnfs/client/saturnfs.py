@@ -915,12 +915,13 @@ class SaturnFile(AbstractBufferedFile):
             num_parts = 1
             remainder = 0
 
-        if final and remainder > 0:
+        last_part_size: Optional[int] = None
+        if final and (remainder > 0 or num_parts == 0):
+            last_part_size = remainder
             num_parts += 1
 
         num_completed = len(self.completed_upload_parts)
         num_presigned = len(self.presigned_upload_parts)
-        last_part_size = remainder if final and remainder > 0 else None
         total_parts = num_completed + num_parts
 
         if refresh:

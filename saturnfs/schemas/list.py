@@ -59,13 +59,22 @@ class ObjectStorageInfo(DataclassSchema):
     created_at: Optional[datetime] = field(default=None)
     updated_at: Optional[datetime] = field(default=None)
 
+    _name: Optional[str] = field(init=False, default=None)
+
     @property
     def is_dir(self) -> bool:
         return self.type == "directory"
 
     @property
     def name(self) -> str:
+        if self._name is not None:
+            return self._name
         return full_path(self.owner_name, self.file_path)
+
+    @name.setter
+    def name(self, value):
+        # Fsspec generic rsync needs to override name
+        self._name = value
 
     def __fspath__(self) -> str:
         return self.name
