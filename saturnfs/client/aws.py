@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional
 from xml.etree import ElementTree
 
 from requests import Response, Session
+from requests.exceptions import ConnectionError
 from saturnfs.errors import ExpiredSignature, SaturnError
 
 
@@ -36,8 +37,15 @@ class AWSPresignedClient:
     ) -> Response:
         if not session:
             session = self.session
-        response = session.put(url, data, headers=headers)
-        self.check_errors(response)
+        try:
+            response = session.put(url, data, headers=headers)
+            self.check_errors(response)
+        except ConnectionError as e:
+            if "Connection reset by peer" in str(e):
+                # AWS does not return a descriptive error on expired signature for PUT
+                # There may be another reason for this, but may as well assume expired and retry
+                raise ExpiredSignature()
+            raise e
         return response
 
     def check_errors(self, response: Response):

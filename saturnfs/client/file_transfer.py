@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BufferedWriter
 from math import ceil
-from queue import Full, PriorityQueue, Queue
-from threading import Thread
+from queue import Empty, Full, PriorityQueue, Queue
+from threading import Event, Thread
 from typing import Any, BinaryIO, List, Optional, Tuple
 
 from fsspec import Callback
 from requests import Session
 from saturnfs import settings
+from saturnfs.api import upload
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
 from saturnfs.schemas import (
@@ -34,8 +35,11 @@ class FileTransferClient:
         self.aws = AWSPresignedClient()
 
     def upload(
-        self, local_path: str, presigned_upload: ObjectStoragePresignedUpload, file_offset: int = 0
+        self, local_path: str, presigned_upload: ObjectStoragePresignedUpload, file_offset: int = 0, max_workers: int = 10
     ) -> Tuple[List[ObjectStorageCompletePart], bool]:
+        if max_workers > 1 and len(presigned_upload.parts) > 1:
+            return self._parallel_upload(local_path, presigned_upload, file_offset=file_offset, max_workers=max_workers)
+
         completed_parts: List[ObjectStorageCompletePart] = []
         with open(local_path, "rb") as f:
             f.seek(file_offset)
@@ -47,7 +51,7 @@ class FileTransferClient:
                     return completed_parts, False
         return completed_parts, True
 
-    def upload_part(self, data: Any, part: ObjectStoragePresignedPart) -> ObjectStorageCompletePart:
+    def upload_part(self, data: Any, part: ObjectStoragePresignedPart, **kwargs) -> ObjectStorageCompletePart:
         response = self.aws.put(
             part.url,
             data,
@@ -56,6 +60,7 @@ class FileTransferClient:
                 "Content-Length": str(part.size),
                 **part.headers,
             },
+            **kwargs,
         )
         etag = self.aws.parse_etag(response)
         return ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
@@ -280,6 +285,126 @@ class FileTransferClient:
                     # Push chunk onto the heap to wait for all previous chunks to complete
                     heapq.heappush(heap, chunk)
 
+    def _parallel_upload(
+        self,
+        local_path: str,
+        presigned_upload: ObjectStoragePresignedUpload,
+        file_offset: int = 0,
+        max_workers: int = 10,
+    ):
+        num_workers = min(len(presigned_upload.parts), max_workers)
+        upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * num_workers)
+        completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
+        cancelled = Event()
+
+        worker_kwargs = {
+            "upload_queue": upload_queue,
+            "completed_queue": completed_queue,
+            "cancelled": cancelled,
+        }
+        for _ in range(num_workers):
+            Thread(target=self._upload_worker, kwargs=worker_kwargs, daemon=True).start()
+
+        return self._upload_producer(presigned_upload, upload_queue, completed_queue, cancelled, local_path, file_offset=file_offset, num_workers=num_workers)
+
+    def _upload_producer(
+        self,
+        presigned_upload: ObjectStoragePresignedUpload,
+        upload_queue: Queue[Optional[UploadChunk]],
+        completed_queue: Queue[Optional[ObjectStorageCompletePart]],
+        cancelled: Event,
+        local_path: str,
+        file_offset: int,
+        num_workers: int,
+    ):
+        """
+        Generate chunks on upload queue to be uploaded
+        Waits for work to be completed, and signals worker shutdown at the end.
+        """
+        with open(local_path, "rb") as f:
+            f.seek(file_offset)
+            for part in presigned_upload.parts:
+                if cancelled.is_set():
+                    break
+
+                chunk = UploadChunk(part=part, data=f.read(part.size))
+                upload_queue.put(chunk)
+
+        # Wait for workers to finish processing all chunks, or exit due to expired signatures
+        uploads_finished = False
+        def _queue_complete():
+            nonlocal uploads_finished
+            upload_queue.join()
+            uploads_finished = True
+            cancelled.set()
+
+        Thread(target=_queue_complete, daemon=True).start()
+        cancelled.wait()
+
+        if not uploads_finished:
+            # Consume any remaining chunks
+            while True:
+                try:
+                    upload_queue.get_nowait()
+                    upload_queue.task_done()
+                except Empty:
+                    break
+
+            # Wait for any remaining worker tasks putting completed parts on the completed_queue
+            upload_queue.join()
+
+        # Signal shutdown to upload workers
+        for _ in range(num_workers):
+            upload_queue.put(None)
+
+        # Collect completed parts
+        completed_parts: List[ObjectStorageCompletePart] = []
+        try:
+            for _ in range(len(presigned_upload.parts)):
+                completed_part = completed_queue.get_nowait()
+                completed_parts.append(completed_part)
+                completed_queue.task_done()
+        except Empty:
+            uploads_finished = False
+
+        completed_parts.sort(key=lambda p: p.part_number)
+        completed_len = len(completed_parts)
+        if not uploads_finished and completed_len > 0:
+            # Throw out non-sequential completed parts
+            last_seen = presigned_upload.parts[0].part_number - 1
+            for i, part in enumerate(completed_parts):
+                if part.part_number != last_seen + 1:
+                    completed_len = i
+                    break
+                last_seen = part.part_number
+            completed_parts = completed_parts[:completed_len]
+
+        return completed_parts, uploads_finished
+
+    def _upload_worker(self, upload_queue: Queue[Optional[UploadChunk]], completed_queue: Queue[Optional[ObjectStorageCompletePart]], cancelled: Event):
+        with Session() as session:
+            while True:
+                chunk = upload_queue.get()
+                if chunk is None:
+                    # No more upload tasks. Put another sentinal
+                    # on the queue just in case, then break.
+                    try:
+                        upload_queue.put_nowait(None)
+                    except Full:
+                        pass
+                    break
+
+                try:
+                    completed_part = self.upload_part(chunk.data, chunk.part, session=session)
+                except ExpiredSignature:
+                    # Signal that an error has occurred
+                    cancelled.set()
+                    upload_queue.task_done()
+                    return
+
+                upload_queue.task_done()
+                completed_queue.put(completed_part)
+
     def close(self):
         self.aws.close()
 
@@ -321,6 +446,16 @@ class DownloadChunk:
 
     def __lt__(self, other: DownloadChunk):
         return self.part_number < other.part_number
+
+
+@dataclass
+class UploadChunk:
+    """
+    Stores information for parrallel chunk upload
+    """
+
+    part: ObjectStoragePresignedPart
+    data: Any
 
 
 def set_last_modified(local_path: str, last_modified: datetime):
