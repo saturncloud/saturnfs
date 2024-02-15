@@ -254,7 +254,7 @@ class FileTransferClient:
             completed_queue.put(chunk)
         session.close()
 
-    def _reconstruct(
+    def _download_collector(
         self,
         completed_queue: PriorityQueue[DownloadChunk],
         local_path: str,
