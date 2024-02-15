@@ -844,64 +844,46 @@ class SaturnFile(AbstractBufferedFile):
         self.upload_id: str = ""
         self.presigned_upload_parts: List[ObjectStoragePresignedPart] = []
         self.completed_upload_parts: List[ObjectStorageCompletePart] = []
+        self.max_workers = max(1, max_workers)
 
         if mode == "wb":
+            # Avoid the overhead of parallel uploading until we know a significant amount of data
+            # will be written to the file
+            self._parallel_uploader: Optional[_parallelFileUploader] = None
             if size is not None:
                 num_parts = math.ceil(float(size) / block_size)
-                self.num_workers = min(num_parts, max_workers)
-            else:
-                self.num_workers = max_workers
-            self.num_workers = max(1, self.num_workers)
-
-            self._upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * self.num_workers)
-            self._completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
-            self._upload_stop = Event()
-
-            worker_kwargs = {
-                "upload_queue": self._upload_queue,
-                "completed_queue": self._completed_queue,
-                "stop": self._upload_stop,
-            }
-            for _ in range(self.num_workers):
-                Thread(
-                    target=self.fs.file_transfer._upload_worker, kwargs=worker_kwargs, daemon=True
-                ).start()
+                num_workers = min(num_parts, self.max_workers)
+                if num_workers > 1:
+                    self._parallel_uploader = _parallelFileUploader(self, num_workers)
 
         # Download data
         self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
 
     def _upload_chunk(self, final: bool = False) -> bool:
         num_bytes = self.buffer.tell()
-        if not final and num_bytes < self.num_workers * self.blocksize:
+        if not final:
             # Defer upload until there are more blocks buffered
-            return False
+            if self._parallel_uploader is None:
+                if num_bytes < self.blocksize:
+                    return False
+                elif self.offset and self.max_workers > 1:
+                    # At least two full blocks have been written, assume there could be many more
+                    self._parallel_uploader = _parallelFileUploader(self, self.max_workers)
+                    if num_bytes < self.max_workers * self.blocksize:
+                        return False
+            elif num_bytes < self._parallel_uploader.num_workers * self.blocksize:
+                return False
 
+        # Write chunks if there is data, or this is the final (and only) chunk of a zero-byte file
         if num_bytes > 0 or (final and len(self.completed_upload_parts) == 0):
             chunks, buffer_empty = self._collect_chunks(num_bytes, final)
 
-            retries = 5
-            while retries > 0:
-                presigned_upload = ObjectStoragePresignedUpload(
-                    self.upload_id, parts=[chunk.part for chunk in chunks]
-                )
+            if self._parallel_uploader is not None:
+                self._parallel_uploader.upload_chunks(chunks, final=final)
+            else:
                 for chunk in chunks:
-                    self._upload_queue.put(chunk)
-
-                self.fs.file_transfer._upload_waiter(
-                    self._upload_queue, self._completed_queue, self._upload_stop
-                )
-                completed_parts, uploads_finished = self.fs.file_transfer._upload_collector(
-                    presigned_upload, self._completed_queue
-                )
-                self._upload_stop.clear()
-                self.completed_upload_parts.extend(completed_parts)
-                if uploads_finished:
-                    break
-
-                # Retry chunks that were not successfully uploaded
-                chunks = chunks[len(completed_parts) :]
-                num_bytes = sum(c.part.size for c in chunks)
-                self._check_upload_parts(num_bytes, final=final, refresh=True)
+                    self._upload_part(chunk.data, chunk.part.part_number, num_bytes, final=final)
+                    num_bytes -= chunk.part.size
 
             if not buffer_empty:
                 return False
@@ -962,7 +944,10 @@ class SaturnFile(AbstractBufferedFile):
 
     def commit(self):
         if self.upload_id:
-            self.fs.file_transfer._upload_workers_shutdown(self._upload_queue, 10)
+            if self._parallel_uploader is not None:
+                self._parallel_uploader.close()
+                self._parallel_uploader = None
+
             self.fs.object_storage_client.complete_upload(
                 self.upload_id, self.completed_upload_parts
             )
@@ -1081,3 +1066,58 @@ class SaturnFile(AbstractBufferedFile):
         if presigned_upload is None:
             raise SaturnError("Failed to retrieve presigned upload")
         self.presigned_upload_parts.extend(presigned_upload.parts)
+
+
+class _parallelFileUploader:
+    """
+    Helper class for SaturnFile that manages worker threads for parallel chunk uploading
+    """
+
+    def __init__(self, file: SaturnFile, num_workers: int) -> None:
+        self.file = file
+        self.num_workers = num_workers
+        self.upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * self.num_workers)
+        self.completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
+        self.stop = Event()
+
+        worker_kwargs = {
+            "upload_queue": self.upload_queue,
+            "completed_queue": self.completed_queue,
+            "stop": self.stop,
+        }
+        for _ in range(self.num_workers):
+            Thread(
+                target=self.file_transfer._upload_worker, kwargs=worker_kwargs, daemon=True
+            ).start()
+
+    @property
+    def file_transfer(self):
+        return self.file.fs.file_transfer
+
+    def upload_chunks(self, chunks: List[UploadChunk], final: bool):
+        retries = 5
+        while retries > 0:
+            presigned_upload = ObjectStoragePresignedUpload(
+                self.file.upload_id, parts=[chunk.part for chunk in chunks]
+            )
+            for chunk in chunks:
+                self.upload_queue.put(chunk)
+
+            self.file_transfer._upload_waiter(
+                self.upload_queue, self.completed_queue, self.stop
+            )
+            completed_parts, uploads_finished = self.file_transfer._upload_collector(
+                presigned_upload, self.completed_queue
+            )
+            self.stop.clear()
+            self.file.completed_upload_parts.extend(completed_parts)
+            if uploads_finished:
+                break
+
+            # Retry chunks that were not successfully uploaded
+            chunks = chunks[len(completed_parts) :]
+            num_bytes = sum(c.part.size for c in chunks)
+            self.file._check_upload_parts(num_bytes, final=final, refresh=True)
+
+    def close(self):
+        self.file_transfer._upload_workers_shutdown(self.upload_queue, self.num_workers)
