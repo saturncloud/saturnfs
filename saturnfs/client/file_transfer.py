@@ -355,7 +355,7 @@ class FileTransferClient:
                 chunk = UploadChunk(part=part, data=f.read(part.size))
                 upload_queue.put(chunk)
 
-        self._upload_waiter(upload_queue, completed_queue, stop, num_workers)
+        self._upload_waiter(upload_queue, completed_queue, stop)
         self._upload_workers_shutdown(upload_queue, num_workers)
 
     def _upload_waiter(

@@ -541,6 +541,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             **kwargs,
         )
 
+    # pylint: disable=unused-argument
     def put_file(
         self,
         lpath: str,
@@ -1103,9 +1104,7 @@ class _parallelFileUploader:
             for chunk in chunks:
                 self.upload_queue.put(chunk)
 
-            self.file_transfer._upload_waiter(
-                self.upload_queue, self.completed_queue, self.stop
-            )
+            self.file_transfer._upload_waiter(self.upload_queue, self.completed_queue, self.stop)
             completed_parts, uploads_finished = self.file_transfer._upload_collector(
                 presigned_upload, self.completed_queue
             )
