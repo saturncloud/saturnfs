@@ -596,6 +596,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             raise SaturnError(
                 f"Upload with ID '{presigned_upload.upload_id}' was unable to complete."
             )
+        self.object_storage_client.complete_upload(presigned_upload.upload_id, completed_parts)
 
         self.invalidate_cache(rpath)
 
