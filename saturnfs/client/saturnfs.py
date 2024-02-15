@@ -593,7 +593,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             retries -= 1
 
         if not upload_finished:
-            raise SaturnError(f"Upload with ID '{presigned_upload.upload_id}' was unable to complete.")
+            raise SaturnError(
+                f"Upload with ID '{presigned_upload.upload_id}' was unable to complete."
+            )
 
         self.invalidate_cache(rpath)
 
