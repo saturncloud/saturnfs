@@ -28,7 +28,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadInfo,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
-from saturnfs.utils import byte_range_header
+from saturnfs.utils import Units, byte_range_header
 from typing_extensions import Literal
 
 DEFAULT_CALLBACK = NoOpCallback()
@@ -548,6 +548,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         **kwargs,
     ):
         """Copy single file to remote"""
+        destination = ObjectStorage.parse(rpath)
         if os.path.isdir(lpath):
             callback.set_size(0)
             callback.relative_update(0)
@@ -560,18 +561,40 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             elif file_size < size:
                 raise SaturnError("File is smaller than the given size")
             callback.set_size(size)
-            f1.seek(0)
 
-            with self.open(rpath, mode="wb", block_size=block_size, size=size, **kwargs) as f2:
-                while f1.tell() < size:
-                    data = f1.read(self.blocksize)
-                    segment_len = f2.write(data)
-                    if segment_len is None:
-                        segment_len = len(data)
-                    callback.relative_update(segment_len)
+        if block_size is None and size > 10 * settings.S3_MIN_PART_SIZE:
+            if size / settings.S3_MAX_NUM_PARTS > settings.S3_MIN_PART_SIZE:
+                block_size = settings.S3_MAX_PART_SIZE
+            else:
+                block_size = settings.S3_MIN_PART_SIZE
 
-            if size == 0:
-                callback.relative_update(0)
+        retries = 5
+        file_offset = 0
+        completed_parts: List[ObjectStorageCompletePart] = []
+        presigned_upload = self.object_storage_client.start_upload(
+            destination, size, part_size=block_size
+        )
+        if block_size is None:
+            block_size = presigned_upload.parts[0].size
+
+        upload_finished = False
+        while retries > 0:
+            _completed_parts, upload_finished = self.file_transfer.upload(
+                lpath, presigned_upload, file_offset=file_offset, callback=callback
+            )
+            completed_parts.extend(_completed_parts)
+            if upload_finished:
+                break
+
+            file_offset = len(completed_parts) * block_size
+            presigned_upload = self.object_storage_client.resume_upload(
+                presigned_upload.upload_id, len(completed_parts) + 1
+            )
+            retries -= 1
+
+        if not upload_finished:
+            raise SaturnError(f"Upload with ID '{presigned_upload.upload_id}' was unable to complete.")
+
         self.invalidate_cache(rpath)
 
     def cp_file(  # pylint: disable=unused-argument
