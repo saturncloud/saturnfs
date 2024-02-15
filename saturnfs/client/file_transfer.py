@@ -295,24 +295,34 @@ class FileTransferClient:
         num_workers = min(len(presigned_upload.parts), max_workers)
         upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * num_workers)
         completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
-        cancelled = Event()
+        stop = Event()
 
-        worker_kwargs = {
-            "upload_queue": upload_queue,
-            "completed_queue": completed_queue,
-            "cancelled": cancelled,
-        }
+        producer_kwargs = dict(
+            presigned_upload=presigned_upload,
+            upload_queue=upload_queue,
+            completed_queue=completed_queue,
+            stop=stop,
+            local_path=local_path,
+            file_offset=file_offset,
+            num_workers=num_workers,
+        )
+        worker_kwargs = dict(
+            upload_queue=upload_queue,
+            completed_queue=completed_queue,
+            stop=stop,
+        )
+        Thread(target=self._upload_producer, kwargs=producer_kwargs, daemon=True).start()
         for _ in range(num_workers):
             Thread(target=self._upload_worker, kwargs=worker_kwargs, daemon=True).start()
 
-        return self._upload_producer(presigned_upload, upload_queue, completed_queue, cancelled, local_path, file_offset=file_offset, num_workers=num_workers)
+        return self._upload_collector(presigned_upload, completed_queue)
 
     def _upload_producer(
         self,
         presigned_upload: ObjectStoragePresignedUpload,
         upload_queue: Queue[Optional[UploadChunk]],
         completed_queue: Queue[Optional[ObjectStorageCompletePart]],
-        cancelled: Event,
+        stop: Event,
         local_path: str,
         file_offset: int,
         num_workers: int,
@@ -324,7 +334,7 @@ class FileTransferClient:
         with open(local_path, "rb") as f:
             f.seek(file_offset)
             for part in presigned_upload.parts:
-                if cancelled.is_set():
+                if stop.is_set():
                     break
 
                 chunk = UploadChunk(part=part, data=f.read(part.size))
@@ -336,10 +346,10 @@ class FileTransferClient:
             nonlocal uploads_finished
             upload_queue.join()
             uploads_finished = True
-            cancelled.set()
+            stop.set()
 
         Thread(target=_queue_complete, daemon=True).start()
-        cancelled.wait()
+        stop.wait()
 
         if not uploads_finished:
             # Consume any remaining chunks
@@ -353,35 +363,14 @@ class FileTransferClient:
             # Wait for any remaining worker tasks putting completed parts on the completed_queue
             upload_queue.join()
 
+            # Signal error to the collector
+            completed_queue.put(None)
+
         # Signal shutdown to upload workers
         for _ in range(num_workers):
             upload_queue.put(None)
 
-        # Collect completed parts
-        completed_parts: List[ObjectStorageCompletePart] = []
-        try:
-            for _ in range(len(presigned_upload.parts)):
-                completed_part = completed_queue.get_nowait()
-                completed_parts.append(completed_part)
-                completed_queue.task_done()
-        except Empty:
-            uploads_finished = False
-
-        completed_parts.sort(key=lambda p: p.part_number)
-        completed_len = len(completed_parts)
-        if not uploads_finished and completed_len > 0:
-            # Throw out non-sequential completed parts
-            last_seen = presigned_upload.parts[0].part_number - 1
-            for i, part in enumerate(completed_parts):
-                if part.part_number != last_seen + 1:
-                    completed_len = i
-                    break
-                last_seen = part.part_number
-            completed_parts = completed_parts[:completed_len]
-
-        return completed_parts, uploads_finished
-
-    def _upload_worker(self, upload_queue: Queue[Optional[UploadChunk]], completed_queue: Queue[Optional[ObjectStorageCompletePart]], cancelled: Event):
+    def _upload_worker(self, upload_queue: Queue[Optional[UploadChunk]], completed_queue: Queue[Optional[ObjectStorageCompletePart]], stop: Event):
         with Session() as session:
             while True:
                 chunk = upload_queue.get()
@@ -398,12 +387,43 @@ class FileTransferClient:
                     completed_part = self.upload_part(chunk.data, chunk.part, session=session)
                 except ExpiredSignature:
                     # Signal that an error has occurred
-                    cancelled.set()
+                    stop.set()
                     upload_queue.task_done()
                     return
 
                 upload_queue.task_done()
                 completed_queue.put(completed_part)
+
+    def _upload_collector(self, presigned_upload: ObjectStoragePresignedUpload, completed_queue: Queue[Optional[ObjectStorageCompletePart]]):
+        # Collect completed parts
+        completed_parts: List[ObjectStorageCompletePart] = []
+        uploads_finished: bool = False
+        while True:
+            completed_part = completed_queue.get()
+            if completed_part is None:
+                # Error detected in one or more workers
+                # Producer only puts None on the queue when all workers are done
+                break
+
+            completed_parts.append(completed_part)
+            completed_queue.task_done()
+            if len(completed_parts) == len(presigned_upload.parts):
+                uploads_finished = True
+                break
+
+        completed_parts.sort(key=lambda p: p.part_number)
+        completed_len = len(completed_parts)
+        if not uploads_finished and completed_len > 0:
+            # Throw out non-sequential completed parts
+            last_seen = presigned_upload.parts[0].part_number - 1
+            for i, part in enumerate(completed_parts):
+                if part.part_number != last_seen + 1:
+                    completed_len = i
+                    break
+                last_seen = part.part_number
+            completed_parts = completed_parts[:completed_len]
+
+        return completed_parts, uploads_finished
 
     def close(self):
         self.aws.close()
