@@ -14,7 +14,6 @@ from typing import Any, BinaryIO, List, Optional, Tuple
 from fsspec import Callback
 from requests import Session
 from saturnfs import settings
-from saturnfs.api import upload
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
 from saturnfs.schemas import (
@@ -186,7 +185,7 @@ class FileTransferClient:
             Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
             for _ in range(num_workers):
                 Thread(target=self._download_worker, kwargs=worker_kwargs, daemon=True).start()
-            self._reconstruct(completed_queue, local_path, num_chunks, callback=callback)
+            self._download_collector(completed_queue, local_path, num_chunks, callback=callback)
 
     def _download_producer(
         self,
@@ -313,20 +312,20 @@ class FileTransferClient:
         completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
         stop = Event()
 
-        producer_kwargs = dict(
-            presigned_upload=presigned_upload,
-            upload_queue=upload_queue,
-            completed_queue=completed_queue,
-            stop=stop,
-            local_path=local_path,
-            file_offset=file_offset,
-            num_workers=num_workers,
-        )
-        worker_kwargs = dict(
-            upload_queue=upload_queue,
-            completed_queue=completed_queue,
-            stop=stop,
-        )
+        producer_kwargs = {
+            "presigned_upload": presigned_upload,
+            "upload_queue": upload_queue,
+            "completed_queue": completed_queue,
+            "stop": stop,
+            "local_path": local_path,
+            "file_offset": file_offset,
+            "num_workers": num_workers,
+        }
+        worker_kwargs = {
+            "upload_queue": upload_queue,
+            "completed_queue": completed_queue,
+            "stop": stop,
+        }
         Thread(target=self._upload_producer, kwargs=producer_kwargs, daemon=True).start()
         for _ in range(num_workers):
             Thread(target=self._upload_worker, kwargs=worker_kwargs, daemon=True).start()
@@ -356,6 +355,15 @@ class FileTransferClient:
                 chunk = UploadChunk(part=part, data=f.read(part.size))
                 upload_queue.put(chunk)
 
+        self._upload_waiter(upload_queue, completed_queue, stop, num_workers)
+        self._upload_workers_shutdown(upload_queue, num_workers)
+
+    def _upload_waiter(
+        self,
+        upload_queue: Queue[Optional[UploadChunk]],
+        completed_queue: Queue[Optional[ObjectStorageCompletePart]],
+        stop: Event,
+    ):
         # Wait for workers to finish processing all chunks, or exit due to expired signatures
         uploads_finished = False
 
@@ -386,6 +394,9 @@ class FileTransferClient:
             # Signal error to the collector
             completed_queue.put(None)
 
+    def _upload_workers_shutdown(
+        self, upload_queue: Queue[Optional[UploadChunk]], num_workers: int
+    ):
         # Signal shutdown to upload workers
         for _ in range(num_workers):
             upload_queue.put(None)
