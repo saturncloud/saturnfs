@@ -359,13 +359,14 @@ class FileTransferClient:
         # Wait for workers to finish processing all chunks, or exit due to expired signatures
         uploads_finished = False
 
-        def _queue_complete():
+        def _uploads_finished():
             nonlocal uploads_finished
             upload_queue.join()
             uploads_finished = True
             stop.set()
 
-        Thread(target=_queue_complete, daemon=True).start()
+        uploads_finished_thread = Thread(target=_uploads_finished, daemon=True)
+        uploads_finished_thread.start()
         stop.wait()
 
         if not uploads_finished:
@@ -378,7 +379,9 @@ class FileTransferClient:
                     break
 
             # Wait for any remaining worker tasks putting completed parts on the completed_queue
-            upload_queue.join()
+            # Join the thread instead of queue to ensure there is no race-condition when
+            # worker threads are signaled to shutdown (otherwise uploads_finished_thread could leak)
+            uploads_finished_thread.join()
 
             # Signal error to the collector
             completed_queue.put(None)
