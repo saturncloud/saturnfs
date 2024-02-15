@@ -35,10 +35,10 @@ class FileTransferClient:
         self.aws = AWSPresignedClient()
 
     def upload(
-        self, local_path: str, presigned_upload: ObjectStoragePresignedUpload, file_offset: int = 0, max_workers: int = 10
+        self, local_path: str, presigned_upload: ObjectStoragePresignedUpload, file_offset: int = 0, max_workers: int = 10, callback: Optional[Callback] = None,
     ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         if max_workers > 1 and len(presigned_upload.parts) > 1:
-            return self._parallel_upload(local_path, presigned_upload, file_offset=file_offset, max_workers=max_workers)
+            return self._parallel_upload(local_path, presigned_upload, file_offset=file_offset, max_workers=max_workers, callback=callback)
 
         completed_parts: List[ObjectStorageCompletePart] = []
         with open(local_path, "rb") as f:
@@ -47,6 +47,8 @@ class FileTransferClient:
                 chunk = FileLimiter(f, part.size)
                 try:
                     completed_parts.append(self.upload_part(chunk, part))
+                    if callback is not None:
+                        callback.relative_update(part.size)
                 except ExpiredSignature:
                     return completed_parts, False
         return completed_parts, True
@@ -291,6 +293,7 @@ class FileTransferClient:
         presigned_upload: ObjectStoragePresignedUpload,
         file_offset: int = 0,
         max_workers: int = 10,
+        callback: Optional[Callback] = None,
     ):
         num_workers = min(len(presigned_upload.parts), max_workers)
         upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * num_workers)
@@ -315,7 +318,7 @@ class FileTransferClient:
         for _ in range(num_workers):
             Thread(target=self._upload_worker, kwargs=worker_kwargs, daemon=True).start()
 
-        return self._upload_collector(presigned_upload, completed_queue)
+        return self._upload_collector(presigned_upload, completed_queue, callback=callback)
 
     def _upload_producer(
         self,
@@ -394,10 +397,13 @@ class FileTransferClient:
                 upload_queue.task_done()
                 completed_queue.put(completed_part)
 
-    def _upload_collector(self, presigned_upload: ObjectStoragePresignedUpload, completed_queue: Queue[Optional[ObjectStorageCompletePart]]):
+    def _upload_collector(self, presigned_upload: ObjectStoragePresignedUpload, completed_queue: Queue[Optional[ObjectStorageCompletePart]], callback: Optional[Callback] = None):
         # Collect completed parts
         completed_parts: List[ObjectStorageCompletePart] = []
         uploads_finished: bool = False
+        part_size = presigned_upload.parts[0].size
+        last_part_size = presigned_upload.parts[-1].size
+        last_part_number = presigned_upload.parts[-1].part_number
         while True:
             completed_part = completed_queue.get()
             if completed_part is None:
@@ -407,6 +413,13 @@ class FileTransferClient:
 
             completed_parts.append(completed_part)
             completed_queue.task_done()
+
+            if callback is not None:
+                if completed_part.part_number == last_part_number:
+                    callback.relative_update(last_part_size)
+                else:
+                    callback.relative_update(part_size)
+
             if len(completed_parts) == len(presigned_upload.parts):
                 uploads_finished = True
                 break
