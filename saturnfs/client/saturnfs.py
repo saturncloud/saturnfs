@@ -13,7 +13,9 @@ from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
+from fsspec.generic import rsync
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
+from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
 from fsspec.utils import other_paths
 from saturnfs import settings
@@ -724,6 +726,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                     self.invalidate_cache(path)
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
+    def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
+        return rsync(source, destination, delete_missing=delete_missing, **kwargs)
+
     def list_uploads(
         self, path: str, is_copy: Optional[bool] = None
     ) -> List[ObjectStorageUploadInfo]:
@@ -1120,3 +1125,6 @@ class _parallelFileUploader:
 
     def close(self):
         self.file_transfer._upload_workers_shutdown(self.upload_queue, self.num_workers)
+
+
+register_implementation(SaturnFS.protocol, SaturnFS)
