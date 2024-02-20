@@ -817,7 +817,7 @@ class SaturnFile(AbstractBufferedFile):
         cache_type: str = "bytes",
         cache_options: Optional[Dict[str, Any]] = None,
         size: Optional[int] = None,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         **kwargs,
     ):
         if mode not in {"rb", "wb"}:

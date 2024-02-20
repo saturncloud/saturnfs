@@ -38,7 +38,7 @@ class FileTransferClient:
         local_path: str,
         presigned_upload: ObjectStoragePresignedUpload,
         file_offset: int = 0,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
     ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         if max_workers > 1 and len(presigned_upload.parts) > 1:
@@ -104,7 +104,7 @@ class FileTransferClient:
         local_path: str,
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
     ):
         dirname = os.path.dirname(local_path)
         if dirname:
@@ -153,7 +153,7 @@ class FileTransferClient:
         presigned_download: ObjectStoragePresignedDownload,
         local_path: str,
         block_size: int,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
     ):
         filename = os.path.basename(local_path)
@@ -306,7 +306,7 @@ class FileTransferClient:
         local_path: str,
         presigned_upload: ObjectStoragePresignedUpload,
         file_offset: int = 0,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
     ):
         num_workers = min(len(presigned_upload.parts), max_workers)
