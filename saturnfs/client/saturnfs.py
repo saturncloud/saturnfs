@@ -896,7 +896,7 @@ class SaturnFile(AbstractBufferedFile):
                 completed_parts: List[ObjectStorageCompletePart]
                 uploads_finished: bool = False
                 if self._parallel_uploader is not None:
-                    completed_parts, uploads_finished = self._parallel_uploader.upload_chunks(self.upload_id, chunks)
+                    completed_parts, uploads_finished = self._parallel_uploader.upload_chunks(chunks)
                 else:
                     completed_parts = []
                     for chunk in chunks:

@@ -77,7 +77,7 @@ class FileTransferClient:
             **kwargs,
         )
         etag = self.aws.parse_etag(response)
-        return ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
+        return ObjectStorageCompletePart(part_number=part.part_number, etag=etag, size=part.size)
 
     def copy(
         self, presigned_copy: ObjectStoragePresignedUpload
@@ -94,7 +94,9 @@ class FileTransferClient:
     def copy_part(self, copy_part: ObjectStoragePresignedPart) -> ObjectStorageCompletePart:
         response = self.aws.put(copy_part.url, headers=copy_part.headers)
         etag = self.aws.parse_etag(response)
-        return ObjectStorageCompletePart(part_number=copy_part.part_number, etag=etag)
+        return ObjectStorageCompletePart(
+            part_number=copy_part.part_number, etag=etag, size=copy_part.size
+        )
 
     def download(
         self,
@@ -313,9 +315,7 @@ class FileTransferClient:
             chunk_iterator = self._upload_producer(
                 presigned_upload, uploader.stop, local_path, file_offset
             )
-            return uploader.upload_chunks(
-                presigned_upload.upload_id, chunk_iterator, callback=callback
-            )
+            return uploader.upload_chunks(chunk_iterator, callback=callback)
         finally:
             uploader.close()
 
@@ -358,14 +358,14 @@ class ParallelUploader:
         for _ in range(self.num_workers):
             Thread(target=self._worker, daemon=True).start()
 
-    def upload_chunks(self, upload_id: str, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None) -> Tuple[List[ObjectStorageCompletePart], bool]:
-        presigned_upload = ObjectStoragePresignedUpload(upload_id)
+    def upload_chunks(self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None) -> Tuple[List[ObjectStorageCompletePart], bool]:
+        num_parts: int = 0
         for chunk in chunks:
-            presigned_upload.parts.append(chunk.part)
             self.upload_queue.put(chunk)
+            num_parts += 1
 
         self._wait()
-        completed_parts, uploads_finished = self._collect(presigned_upload, callback=callback)
+        completed_parts, uploads_finished = self._collect(num_parts, callback=callback)
         self.stop.clear()
         return completed_parts, uploads_finished
 
@@ -431,15 +431,12 @@ class ParallelUploader:
 
     def _collect(
         self,
-        presigned_upload: ObjectStoragePresignedUpload,
+        num_parts: int,
         callback: Optional[Callback] = None,
     ):
         # Collect completed parts
         completed_parts: List[ObjectStorageCompletePart] = []
         uploads_finished: bool = False
-        part_size = presigned_upload.parts[0].size
-        last_part_size = presigned_upload.parts[-1].size
-        last_part_number = presigned_upload.parts[-1].part_number
         while True:
             completed_part = self.completed_queue.get()
             if completed_part is None:
@@ -451,20 +448,17 @@ class ParallelUploader:
             self.completed_queue.task_done()
 
             if callback is not None:
-                if completed_part.part_number == last_part_number:
-                    callback.relative_update(last_part_size)
-                else:
-                    callback.relative_update(part_size)
+                callback.relative_update(completed_part.size)
 
-            if len(completed_parts) == len(presigned_upload.parts):
+            if len(completed_parts) == num_parts:
                 uploads_finished = True
                 break
 
         completed_parts.sort(key=lambda p: p.part_number)
         completed_len = len(completed_parts)
         if not uploads_finished and completed_len > 0:
-            # Throw out non-sequential completed parts
-            last_seen = presigned_upload.parts[0].part_number - 1
+            # Throw out non-sequential completed parts for simpler retry logic
+            last_seen = completed_parts[0].part_number - 1
             for i, part in enumerate(completed_parts):
                 if part.part_number != last_seen + 1:
                     completed_len = i
