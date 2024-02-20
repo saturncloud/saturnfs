@@ -867,7 +867,7 @@ class SaturnFile(AbstractBufferedFile):
                 num_parts = math.ceil(float(size) / block_size)
                 num_workers = min(num_parts, self.max_workers)
                 if num_workers > 1:
-                    self._parallel_uploader = ParallelUploader(self.fs.file_transfer, num_workers)
+                    self._parallel_uploader = ParallelUploader(self.fs.file_transfer, num_workers, exit_on_timeout=False)
 
         # Download data
         self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
@@ -881,7 +881,7 @@ class SaturnFile(AbstractBufferedFile):
                     return False
                 elif self.offset and self.max_workers > 1:
                     # At least two full blocks have been written, assume there could be many more
-                    self._parallel_uploader = ParallelUploader(self.fs.file_transfer, self.max_workers)
+                    self._parallel_uploader = ParallelUploader(self.fs.file_transfer, self.max_workers, exit_on_timeout=False)
                     if num_bytes < self.max_workers * self.blocksize:
                         return False
             elif num_bytes < self._parallel_uploader.num_workers * self.blocksize:

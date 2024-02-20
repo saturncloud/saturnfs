@@ -348,9 +348,10 @@ class ParallelUploader:
     Helper class that manages worker threads for parallel chunk uploading
     """
 
-    def __init__(self, file_transfer: FileTransferClient, num_workers: int) -> None:
+    def __init__(self, file_transfer: FileTransferClient, num_workers: int, exit_on_timeout: bool = True) -> None:
         self.file_transfer = file_transfer
         self.num_workers = num_workers
+        self.exit_on_timeout = exit_on_timeout
         self.upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * self.num_workers)
         self.completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
         self.stop = Event()
@@ -393,7 +394,10 @@ class ParallelUploader:
                     # Signal that an error has occurred
                     self.stop.set()
                     self.upload_queue.task_done()
-                    return
+                    if self.exit_on_timeout:
+                        return
+                    else:
+                        continue
 
                 self.upload_queue.task_done()
                 self.completed_queue.put(completed_part)
