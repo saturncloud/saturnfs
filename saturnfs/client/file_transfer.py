@@ -409,8 +409,9 @@ class ParallelUploader:
         def _uploads_finished():
             nonlocal uploads_finished
             self.upload_queue.join()
-            uploads_finished = True
-            self.stop.set()
+            if not self.stop.is_set():
+                uploads_finished = True
+                self.stop.set()
 
         uploads_finished_thread = Thread(target=_uploads_finished, daemon=True)
         uploads_finished_thread.start()
