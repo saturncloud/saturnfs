@@ -2,7 +2,6 @@ from typing import Any, Dict, Optional
 from xml.etree import ElementTree
 
 from requests import Response, Session
-from requests.exceptions import ConnectionError
 from saturnfs.errors import ExpiredSignature, SaturnError
 
 
@@ -37,14 +36,8 @@ class AWSPresignedClient:
     ) -> Response:
         if not session:
             session = self.session
-        try:
-            response = session.put(url, data, headers=headers)
-            self.check_errors(response)
-        except ConnectionError as e:
-            if "Connection reset by peer" in str(e):
-                # TODO: Add handling for other error types
-                raise ExpiredSignature() from e
-            raise e
+        response = session.put(url, data, headers=headers)
+        self.check_errors(response)
         return response
 
     def check_errors(self, response: Response):
