@@ -916,6 +916,8 @@ class SaturnFile(AbstractBufferedFile):
                 chunks = chunks[len(completed_parts) :]
                 num_bytes = sum(c.part.size for c in chunks)
                 self._check_upload_parts(num_bytes, final=final, refresh=True)
+                for chunk in chunks:
+                    chunk.part = self.presigned_upload_parts[chunk.part.part_number - 1]
                 retries -= 1
 
             if not uploads_finished:
