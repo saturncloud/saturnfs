@@ -8,7 +8,7 @@ from glob import has_magic
 from io import BufferedWriter, BytesIO, TextIOWrapper
 from queue import Queue
 from threading import Event, Thread
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union, overload
 from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
@@ -340,16 +340,19 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         **kwargs,
     ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
         path = self._strip_protocol(path)
-        if maxdepth is None and "/" in path:
+        if not withdirs and maxdepth is None and "/" in path:
             # Can list more efficiently by ignoring / delimiters rather than walking the file tree
+            # Can't do this when withdirs is true since undelimited listing skips directories
             files: List[ObjectStorageInfo] = []
             prefix = ObjectStoragePrefix.parse(path + "/")
 
             for result in self.object_storage_client.list_iter(prefix, delimited=False):
                 files.extend(result.files)
+
+            files.sort(key=lambda f: f.name)
             if detail:
                 return {file.name: file for file in files}
-            return sorted(file.name for file in files)
+            return [file.name for file in files]
         return super().find(path, maxdepth=maxdepth, withdirs=withdirs, detail=detail, **kwargs)
 
     @overload
