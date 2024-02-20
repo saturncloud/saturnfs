@@ -227,11 +227,15 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         parent = self._parent(path)
         parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
         if parent_files is not None:
-            files = [
-                f
-                for f in parent_files
-                if f.name == path or (f.name.rstrip("/") == path and f.is_dir)
-            ]
+            files = []
+            for f in parent_files:
+                name = f.name
+                if name.startswith(self.protocol):
+                    # Fsspec rsync adds protocol back onto name
+                    name = self._strip_protocol(name)
+                if name == path or (f.is_dir and name.rstrip("/") == path):
+                    files.append(f)
+
             if len(files) == 0:
                 # parent dir was listed but did not contain this file
                 raise FileNotFoundError(path)
