@@ -892,9 +892,9 @@ class SaturnFile(AbstractBufferedFile):
             chunks, buffer_empty = self._collect_chunks(num_bytes, final)
 
             retries = 5
+            uploads_finished: bool = False
             while retries > 0:
                 completed_parts: List[ObjectStorageCompletePart]
-                uploads_finished: bool = False
                 if self._parallel_uploader is not None:
                     completed_parts, uploads_finished = self._parallel_uploader.upload_chunks(chunks)
                 else:
@@ -917,6 +917,11 @@ class SaturnFile(AbstractBufferedFile):
                 num_bytes = sum(c.part.size for c in chunks)
                 self._check_upload_parts(num_bytes, final=final, refresh=True)
                 retries -= 1
+
+            if not uploads_finished:
+                raise SaturnError(
+                    f"Upload with ID '{self.upload_id}' was unable to complete."
+                )
 
             if not buffer_empty:
                 return False
