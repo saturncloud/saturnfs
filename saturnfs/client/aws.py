@@ -42,8 +42,7 @@ class AWSPresignedClient:
             self.check_errors(response)
         except ConnectionError as e:
             if "Connection reset by peer" in str(e):
-                # AWS does not return a descriptive error on expired signature for PUT
-                # There may be another reason for this, but may as well assume expired and retry
+                # TODO: Add handling for other error types
                 raise ExpiredSignature() from e
             raise e
         return response
