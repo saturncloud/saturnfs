@@ -313,7 +313,7 @@ class FileTransferClient:
         uploader = ParallelUploader(self, num_workers)
         try:
             chunk_iterator = self._upload_producer(
-                presigned_upload, uploader.stop, local_path, file_offset
+                presigned_upload, local_path, file_offset
             )
             return uploader.upload_chunks(chunk_iterator, callback=callback)
         finally:
@@ -322,7 +322,6 @@ class FileTransferClient:
     def _upload_producer(
         self,
         presigned_upload: ObjectStoragePresignedUpload,
-        stop: Event,
         local_path: str,
         file_offset: int,
     ) -> Iterable[UploadChunk]:
@@ -333,11 +332,7 @@ class FileTransferClient:
         with open(local_path, "rb") as f:
             f.seek(file_offset)
             for part in presigned_upload.parts:
-                if stop.is_set():
-                    break
-
-                chunk = UploadChunk(part=part, data=f.read(part.size))
-                yield chunk
+                yield UploadChunk(part=part, data=f.read(part.size))
 
     def close(self):
         self.aws.close()
@@ -362,11 +357,15 @@ class ParallelUploader:
     def upload_chunks(self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None) -> Tuple[List[ObjectStorageCompletePart], bool]:
         num_parts: int = 0
         first_part: int = -1
+        all_chunks_read: bool = False
         for chunk in chunks:
             if first_part == -1:
                 first_part = chunk.part.part_number
-            self.upload_queue.put(chunk)
+            if not self._put_chunk(chunk):
+                break
             num_parts += 1
+        else:
+            all_chunks_read = True
 
         if first_part == -1:
             # No chunks given
@@ -375,12 +374,22 @@ class ParallelUploader:
         self._wait()
         completed_parts, uploads_finished = self._collect(first_part, num_parts, callback=callback)
         self.stop.clear()
-        return completed_parts, uploads_finished
+        return completed_parts, uploads_finished and all_chunks_read
 
     def close(self):
         # Signal shutdown to upload workers
         for _ in range(self.num_workers):
             self.upload_queue.put(None)
+
+    def _put_chunk(self, chunk: UploadChunk, poll_interval: int = 5) -> bool:
+        while True:
+            try:
+                self.upload_queue.put(chunk, timeout=poll_interval)
+                return True
+            except Full:
+                if self.stop.is_set():
+                    # Error occurred during upload, likely an expired signature
+                    return False
 
     def _worker(self):
         with Session() as session:
