@@ -368,6 +368,10 @@ class ParallelUploader:
             self.upload_queue.put(chunk)
             num_parts += 1
 
+        if first_part == -1:
+            # No chunks given
+            return [], True
+
         self._wait()
         completed_parts, uploads_finished = self._collect(first_part, num_parts, callback=callback)
         self.stop.clear()
