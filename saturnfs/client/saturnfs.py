@@ -130,6 +130,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
 
         callback.set_size(len(path2))
         for p1, p2 in zip(path1, path2):
+            if p1.endswith("/"):
+                # Directories aren't explicitly created
+                continue
             callback.branch(p1, p2, kwargs)
             try:
                 self.cp_file(p1, p2, **kwargs)
