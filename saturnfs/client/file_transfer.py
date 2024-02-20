@@ -361,12 +361,15 @@ class ParallelUploader:
 
     def upload_chunks(self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None) -> Tuple[List[ObjectStorageCompletePart], bool]:
         num_parts: int = 0
+        first_part: int = -1
         for chunk in chunks:
+            if first_part == -1:
+                first_part = chunk.part.part_number
             self.upload_queue.put(chunk)
             num_parts += 1
 
         self._wait()
-        completed_parts, uploads_finished = self._collect(num_parts, callback=callback)
+        completed_parts, uploads_finished = self._collect(first_part, num_parts, callback=callback)
         self.stop.clear()
         return completed_parts, uploads_finished
 
@@ -436,6 +439,7 @@ class ParallelUploader:
 
     def _collect(
         self,
+        first_part: int,
         num_parts: int,
         callback: Optional[Callback] = None,
     ):
@@ -447,6 +451,7 @@ class ParallelUploader:
             if completed_part is None:
                 # Error detected in one or more workers
                 # Producer only puts None on the queue when all workers are done
+                self.completed_queue.task_done()
                 break
 
             completed_parts.append(completed_part)
@@ -463,7 +468,7 @@ class ParallelUploader:
         completed_len = len(completed_parts)
         if not uploads_finished and completed_len > 0:
             # Throw out non-sequential completed parts for simpler retry logic
-            last_seen = completed_parts[0].part_number - 1
+            last_seen = first_part - 1
             for i, part in enumerate(completed_parts):
                 if part.part_number != last_seen + 1:
                     completed_len = i
