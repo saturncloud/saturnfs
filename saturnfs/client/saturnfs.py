@@ -669,13 +669,12 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         **kwargs,
     ):
         remote = ObjectStorage.parse(rpath)
-        download = self.object_storage_client.download_file(remote)
-        if outfile is not None:
-            self.file_transfer.download_to_writer(download.url, outfile, callback=callback, **kwargs)
-        elif lpath is not None:
-            self.file_transfer.download(download, lpath, callback=callback, **kwargs)
-        else:
+        destination = lpath or outfile
+        if destination is None:
             raise SaturnError("Either lpath or outfile is required")
+        download = self.object_storage_client.download_file(remote)
+
+        self.file_transfer.download(download, destination, callback=callback, **kwargs)
 
     def get_bulk(self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK):
         callback.set_size(len(lpaths))

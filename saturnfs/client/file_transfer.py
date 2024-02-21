@@ -102,31 +102,40 @@ class FileTransferClient:
     def download(
         self,
         presigned_download: ObjectStoragePresignedDownload,
-        local_path: str,
+        destination: Union[str, BufferedWriter],
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
     ):
-        dirname = os.path.dirname(local_path)
-        if dirname:
-            os.makedirs(dirname, exist_ok=True)
-
-        if max_workers > 1 and presigned_download.size >= 3 * block_size:
-            self._parallel_download(
-                presigned_download,
-                local_path,
-                block_size,
-                callback=callback,
-                max_workers=max_workers,
-            )
+        local_path: Optional[str] = None
+        if isinstance(destination, str):
+            local_path = destination
+            dirname = os.path.dirname(local_path)
+            if dirname:
+                os.makedirs(dirname, exist_ok=True)
+            outfile = open(local_path, "wb")
         else:
-            with open(local_path, "wb") as f:
-                self.download_to_writer(
-                    presigned_download.url, f, callback=callback, block_size=block_size
-                )
-        set_last_modified(local_path, presigned_download.updated_at)
+            outfile = destination
 
-    def download_to_writer(
+        try:
+            if max_workers > 1 and presigned_download.size >= 3 * block_size:
+                self._parallel_download(
+                    presigned_download,
+                    outfile,
+                    block_size,
+                    callback=callback,
+                    max_workers=max_workers,
+                )
+            else:
+                self._download_to_writer(
+                    presigned_download.url, outfile, callback=callback, block_size=block_size
+                )
+        finally:
+            if local_path:
+                outfile.close()
+                set_last_modified(local_path, presigned_download.updated_at)
+
+    def _download_to_writer(
         self,
         url: str,
         outfile: BufferedWriter,
@@ -152,7 +161,7 @@ class FileTransferClient:
     def _parallel_download(
         self,
         presigned_download: ObjectStoragePresignedDownload,
-        local_path: str,
+        outfile: BufferedWriter,
         block_size: int,
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
@@ -167,8 +176,7 @@ class FileTransferClient:
             chunk_iterator = self._download_producer(
                 presigned_download, block_size, num_chunks, last_chunk_size
             )
-            with open(local_path, "wb") as f:
-                downloader.download_chunks(f, chunk_iterator, callback=callback)
+            downloader.download_chunks(outfile, chunk_iterator, callback=callback)
         finally:
             downloader.close()
 
@@ -286,7 +294,7 @@ class ParallelDownloader:
                     break
 
                 temp_file = tempfile.TemporaryFile(mode="w+b")
-                self.file_transfer.download_to_writer(part.url, temp_file, headers=part.headers, session=session)
+                self.file_transfer._download_to_writer(part.url, temp_file, headers=part.headers, session=session)
                 temp_file.seek(0)
 
                 self.completed_queue.put(DownloadChunk(part.part_number, part.size, temp_file))
