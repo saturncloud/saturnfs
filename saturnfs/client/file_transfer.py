@@ -9,7 +9,7 @@ from io import BufferedWriter, BytesIO
 from math import ceil
 from queue import Empty, Full, PriorityQueue, Queue
 from threading import Event, Thread
-from typing import Any, BinaryIO, Iterable, List, Optional, Tuple
+from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple
 
 from fsspec import Callback
 from requests import Session
@@ -121,20 +121,20 @@ class FileTransferClient:
         else:
             with open(local_path, "wb") as f:
                 self.download_to_writer(
-                    presigned_download, f, callback=callback, block_size=block_size
+                    presigned_download.url, f, callback=callback, block_size=block_size
                 )
         set_last_modified(local_path, presigned_download.updated_at)
 
     def download_to_writer(
         self,
-        presigned_download: ObjectStoragePresignedDownload,
+        url: str,
         outfile: BufferedWriter,
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
         stream: bool = True,
         **kwargs,
     ):
-        response = self.aws.get(presigned_download.url, stream=stream, **kwargs)
+        response = self.aws.get(url, stream=stream, **kwargs)
         if callback is not None:
             content_length = response.headers.get("Content-Length")
             callback.set_size(int(content_length) if content_length else None)
@@ -162,32 +162,33 @@ class FileTransferClient:
         last_chunk_size = presigned_download.size % block_size
         num_workers = min(num_chunks, max_workers)
 
-        downloader = ParallelDownloader(self, presigned_download, block_size, num_workers)
+        downloader = ParallelDownloader(self, num_workers)
 
         # Downloads are non-resumable for now
         with tempfile.TemporaryDirectory(
             prefix=f".saturnfs_{filename}_", dir=parent_dir
         ) as tmp_dir:
             producer_kwargs = {
+                "presigned_download": presigned_download,
                 "download_queue": downloader.download_queue,
                 "tmp_dir": tmp_dir,
                 "block_size": block_size,
                 "num_chunks": num_chunks,
                 "last_chunk_size": last_chunk_size,
-                "num_workers": num_workers,
             }
 
             Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
             downloader._collector(local_path, num_chunks, callback=callback)
+            downloader.close()
 
     def _download_producer(
         self,
+        presigned_download: ObjectStoragePresignedDownload,
         download_queue: Queue[Optional[DownloadChunk]],
         tmp_dir: str,
         block_size: int,
         num_chunks: int,
         last_chunk_size: int,
-        num_workers: int,
     ):
         """
         Generate chunks on download queue to be downloaded
@@ -200,15 +201,15 @@ class FileTransferClient:
                 chunk_size = block_size
 
             part_number = i + 1
+            start = (part_number - 1) * block_size
+            end = start + chunk_size
+            headers = byte_range_header(start, end)
+
             tmp_path = os.path.join(tmp_dir, f"part_{part_number}")
-            chunk = DownloadChunk(part_number=part_number, chunk_size=chunk_size, tmp_path=tmp_path)
+            chunk = DownloadChunk(part_number=part_number, chunk_size=chunk_size, url=presigned_download.url, headers=headers, tmp_path=tmp_path)
             download_queue.put(chunk)
         # Wait for workers to finish processing all chunks
         download_queue.join()
-
-        # Signal shutdown to download workers
-        for i in range(num_workers):
-            download_queue.put(None)
 
     def _parallel_upload(
         self,
@@ -253,8 +254,6 @@ class ParallelDownloader:
     def __init__(
         self,
         file_tranfer: FileTransferClient,
-        presigned_download: ObjectStoragePresignedDownload,
-        block_size: int,
         num_workers: int,
         exit_on_timeout: bool = True,
     ) -> None:
@@ -264,15 +263,15 @@ class ParallelDownloader:
         self.download_queue: Queue[DownloadChunk] = Queue(2 * num_workers)
         self.completed_queue: PriorityQueue[DownloadChunk] = PriorityQueue()
 
-        worker_kwargs = {"presigned_download": presigned_download, "block_size": block_size}
         for _ in range(num_workers):
-            Thread(target=self._worker, kwargs=worker_kwargs, daemon=True).start()
+            Thread(target=self._worker, daemon=True).start()
 
-    def _worker(
-        self,
-        presigned_download: ObjectStoragePresignedDownload,
-        block_size: int,
-    ):
+    def close(self):
+        # Signal shutdown to download workers
+        for _ in range(self.num_workers):
+            self.download_queue.put(None)
+
+    def _worker(self):
         """
         Pull chunks from the download queue, and write the associated byte range to a temp file.
         Push completed chunk onto the completed queue to be reconstructed.
@@ -289,14 +288,8 @@ class ParallelDownloader:
                     pass
                 break
 
-            start = (chunk.part_number - 1) * block_size
-            end = start + chunk.chunk_size
-            if end > presigned_download.size:
-                end = presigned_download.size
-            headers = byte_range_header(start, end)
-
             with open(chunk.tmp_path, "wb") as f:
-                self.file_transfer.download_to_writer(presigned_download, f, headers=headers, session=session)
+                self.file_transfer.download_to_writer(chunk.url, f, headers=chunk.headers, session=session)
 
             self.download_queue.task_done()
             self.completed_queue.put(chunk)
@@ -541,6 +534,8 @@ class DownloadChunk:
 
     part_number: int
     chunk_size: int
+    url: str
+    headers: Dict[str, str]
     tmp_path: str
 
     def __lt__(self, other: DownloadChunk):

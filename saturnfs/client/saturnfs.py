@@ -671,7 +671,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         remote = ObjectStorage.parse(rpath)
         download = self.object_storage_client.download_file(remote)
         if outfile is not None:
-            self.file_transfer.download_to_writer(download, outfile, callback=callback, **kwargs)
+            self.file_transfer.download_to_writer(download.url, outfile, callback=callback, **kwargs)
         elif lpath is not None:
             self.file_transfer.download(download, lpath, callback=callback, **kwargs)
         else:
