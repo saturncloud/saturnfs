@@ -280,24 +280,23 @@ class ParallelDownloader:
         Pull chunks from the download queue, and write the associated byte range to a temp file.
         Push completed chunk onto the completed queue to be reconstructed.
         """
-        session = Session()
-        while True:
-            chunk = self.download_queue.get()
-            if chunk is None:
-                # No more download tasks. Put another sentinal
-                # on the queue just in case, then break.
-                try:
-                    self.download_queue.put_nowait(None)
-                except Full:
-                    pass
-                break
+        with Session() as session:
+            while True:
+                chunk = self.download_queue.get()
+                if chunk is None:
+                    # No more download tasks. Put another sentinal
+                    # on the queue just in case, then break.
+                    try:
+                        self.download_queue.put_nowait(None)
+                    except Full:
+                        pass
+                    break
 
-            with open(chunk.tmp_path, "wb") as f:
-                self.file_transfer.download_to_writer(chunk.url, f, headers=chunk.headers, session=session)
+                with open(chunk.tmp_path, "wb") as f:
+                    self.file_transfer.download_to_writer(chunk.url, f, headers=chunk.headers, session=session)
 
-            self.completed_queue.put(chunk)
-            self.download_queue.task_done()
-        session.close()
+                self.completed_queue.put(chunk)
+                self.download_queue.task_done()
 
     def _collector(
         self,
