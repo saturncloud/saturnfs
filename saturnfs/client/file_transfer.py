@@ -157,7 +157,7 @@ class FileTransferClient:
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
     ):
-        num_chunks = ceil(presigned_download.size / block_size)
+        num_chunks = ceil(float(presigned_download.size) / block_size)
         last_chunk_size = presigned_download.size % block_size
         num_workers = min(num_chunks, max_workers)
 
