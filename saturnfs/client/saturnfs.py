@@ -1055,9 +1055,12 @@ class SaturnFile(AbstractBufferedFile):
         self.upload_id = presigned_upload.object_storage_upload_id
 
     def _fetch_range(self, start: int, end: int):
-        total_num_bytes = end - start
-        if self._parallel_downloader is not None and total_num_bytes >= settings.S3_MIN_PART_SIZE:
-            return self._fetch_range_parallel(start, total_num_bytes)
+        presigned_download = self.presigned_download or self._presign_download()
+        if end > presigned_download.size:
+            end = presigned_download.size
+
+        if self.max_workers > 1 and end - start >= settings.S3_MIN_PART_SIZE:
+            return self._fetch_range_parallel(start, end)
 
         presigned_download = self.presigned_download or self._presign_download()
         retries: int = 5
@@ -1071,17 +1074,20 @@ class SaturnFile(AbstractBufferedFile):
                 if retries > 0:
                     presigned_download = self._presign_download()
 
-    def _fetch_range_parallel(self, start: int, total_num_bytes: int, retries: int = 5) -> bytes:
+    def _fetch_range_parallel(self, start: int, end: int, retries: int = 5) -> bytes:
         if self._parallel_downloader is None:
             self._parallel_downloader = ParallelDownloader(
                 self.fs.file_transfer, self.max_workers, exit_on_timeout=False
             )
 
-        presigned_download = self.presigned_download or self._presign_download()
         buffer = BytesIO()
-        num_bytes = total_num_bytes
-        offset = start
+        presigned_download = self.presigned_download or self._presign_download()
+        total_num_bytes = end - start
+        bytes_written = 0
+
         while retries > 0:
+            num_bytes = total_num_bytes - bytes_written
+            offset = start + bytes_written
             parts_iterator = self._iter_download_parts(
                 presigned_download.url, offset, num_bytes, self._parallel_downloader.num_workers,
             )
@@ -1093,8 +1099,6 @@ class SaturnFile(AbstractBufferedFile):
             retries -= 1
             if retries > 0:
                 presigned_download = self._presign_download()
-                offset = start + bytes_written
-                num_bytes = total_num_bytes - bytes_written
         else:
             raise SaturnError("File failed to fetch requested byte range")
         buffer.seek(0)
@@ -1107,6 +1111,9 @@ class SaturnFile(AbstractBufferedFile):
         num_bytes: int,
         num_workers: int,
     ) -> Iterable[DownloadPart]:
+        if num_bytes == 0:
+            return
+
         if num_bytes > num_workers * settings.S3_MIN_PART_SIZE:
             part_size = settings.S3_MIN_PART_SIZE
         else:
@@ -1116,7 +1123,10 @@ class SaturnFile(AbstractBufferedFile):
 
         for i in range(num_parts):
             part_num = i + 1
-            size = part_size if part_num < num_parts else last_part_size
+            if part_num < num_parts or not last_part_size:
+                size = part_size
+            else:
+                size = last_part_size
             start = offset + (part_num - 1) * part_size
             headers = byte_range_header(start, start + size)
             yield DownloadPart(part_num, size, url, headers)
