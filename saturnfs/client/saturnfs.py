@@ -6,9 +6,7 @@ import weakref
 from datetime import datetime
 from glob import has_magic
 from io import BufferedWriter, BytesIO, TextIOWrapper
-from queue import Queue
-from threading import Event, Thread
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union, overload
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
