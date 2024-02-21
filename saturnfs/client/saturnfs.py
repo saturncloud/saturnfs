@@ -18,7 +18,9 @@ from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
 from fsspec.utils import other_paths
 from saturnfs import settings
 from saturnfs.client.file_transfer import (
+    DownloadPart,
     FileTransferClient,
+    ParallelDownloader,
     ParallelUploader,
     UploadChunk,
 )
@@ -774,6 +776,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
     def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
+        if source.startswith(settings.SATURNFS_FILE_PREFIX):
+            # Increase default blocksize for rsync to take advantage of parallel download
+            kwargs.setdefault("blocksize", 5 * settings.S3_MIN_PART_SIZE)
         return rsync(source, destination, delete_missing=delete_missing, **kwargs)
 
     def list_uploads(
@@ -864,6 +869,7 @@ class SaturnFile(AbstractBufferedFile):
         self.path = path
         self.remote = ObjectStorage.parse(path)
 
+        self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
         if mode == "rb":
             # Prefetch download URL and size to skip the extra info request
             # which could retrieve stale values from the ls cache
@@ -912,9 +918,8 @@ class SaturnFile(AbstractBufferedFile):
                     self._parallel_uploader = ParallelUploader(
                         self.fs.file_transfer, num_workers, exit_on_timeout=False
                     )
-
-        # Download data
-        self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
+        elif mode == "rb":
+            self._parallel_downloader: Optional[ParallelDownloader] = None
 
     def _upload_chunk(self, final: bool = False) -> bool:
         num_bytes = self.buffer.tell()
@@ -1033,6 +1038,15 @@ class SaturnFile(AbstractBufferedFile):
         if self.upload_id:
             self.fs.object_storage_client.cancel_upload(self.upload_id)
 
+    def close(self):
+        if self.mode == "wb" and self._parallel_uploader is not None:
+            self._parallel_uploader.close()
+            self._parallel_uploader = None
+        if self.mode == "rb" and self._parallel_downloader is not None:
+            self._parallel_downloader.close()
+            self._parallel_downloader = None
+        super().close()
+
     def _initiate_upload(self):
         presigned_upload = self.fs.object_storage_client.start_upload(
             self.remote, self.size, self.blocksize
@@ -1041,15 +1055,71 @@ class SaturnFile(AbstractBufferedFile):
         self.upload_id = presigned_upload.object_storage_upload_id
 
     def _fetch_range(self, start: int, end: int):
-        presigned_download = self.presigned_download or self._presign_download()
-        headers = byte_range_header(start, end)
-        try:
-            response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
-        except ExpiredSignature:
-            presigned_download = self._presign_download()
-            response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
+        total_num_bytes = end - start
+        if self._parallel_downloader is not None and total_num_bytes >= settings.S3_MIN_PART_SIZE:
+            return self._fetch_range_parallel(start, total_num_bytes)
 
-        return response.content
+        presigned_download = self.presigned_download or self._presign_download()
+        retries: int = 5
+        while retries > 0:
+            headers = byte_range_header(start, end)
+            try:
+                response = self.fs.file_transfer.aws.get(presigned_download.url, headers=headers)
+                return response.content
+            except ExpiredSignature:
+                retries -= 1
+                if retries > 0:
+                    presigned_download = self._presign_download()
+
+    def _fetch_range_parallel(self, start: int, total_num_bytes: int, retries: int = 5) -> bytes:
+        if self._parallel_downloader is None:
+            self._parallel_downloader = ParallelDownloader(
+                self.fs.file_transfer, self.max_workers, exit_on_timeout=False
+            )
+
+        presigned_download = self.presigned_download or self._presign_download()
+        buffer = BytesIO()
+        num_bytes = total_num_bytes
+        offset = start
+        while retries > 0:
+            parts_iterator = self._iter_download_parts(
+                presigned_download.url, offset, num_bytes, self._parallel_downloader.num_workers,
+            )
+            self._parallel_downloader.download_chunks(buffer, parts_iterator)
+            bytes_written = buffer.tell()
+            if bytes_written >= total_num_bytes:
+                break
+
+            retries -= 1
+            if retries > 0:
+                presigned_download = self._presign_download()
+                offset = start + bytes_written
+                num_bytes = total_num_bytes - bytes_written
+        else:
+            raise SaturnError("File failed to fetch requested byte range")
+        buffer.seek(0)
+        return buffer.read()
+
+    def _iter_download_parts(
+        self,
+        url: str,
+        offset: int,
+        num_bytes: int,
+        num_workers: int,
+    ) -> Iterable[DownloadPart]:
+        if num_bytes > num_workers * settings.S3_MIN_PART_SIZE:
+            part_size = settings.S3_MIN_PART_SIZE
+        else:
+            part_size = int(num_bytes / num_workers)
+        last_part_size = num_bytes % part_size
+        num_parts = math.ceil(float(num_bytes) / part_size)
+
+        for i in range(num_parts):
+            part_num = i + 1
+            size = part_size if part_num < num_parts else last_part_size
+            start = offset + (part_num - 1) * part_size
+            headers = byte_range_header(start, start + size)
+            yield DownloadPart(part_num, size, url, headers)
 
     def _presign_download(self) -> ObjectStoragePresignedDownload:
         presigned_download = self.fs.object_storage_client.download_file(self.remote)
