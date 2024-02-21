@@ -258,7 +258,7 @@ class ParallelDownloader:
             Thread(target=self._worker, daemon=True).start()
 
     def download_chunks(self, f: BufferedWriter, chunks: Iterable[DownloadChunk], callback: Optional[Callback] = None):
-        collector_thread = Thread(target=self._collector, kwargs={"f": f, "callback": callback})
+        collector_thread = Thread(target=self._collector, kwargs={"f": f, "callback": callback}, daemon=True)
         collector_thread.start()
 
         for chunk in chunks:
