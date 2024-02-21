@@ -17,7 +17,11 @@ from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
 from fsspec.utils import other_paths
 from saturnfs import settings
-from saturnfs.client.file_transfer import FileTransferClient, ParallelUploader, UploadChunk
+from saturnfs.client.file_transfer import (
+    FileTransferClient,
+    ParallelUploader,
+    UploadChunk,
+)
 from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
@@ -868,7 +872,9 @@ class SaturnFile(AbstractBufferedFile):
                 num_parts = math.ceil(float(size) / block_size)
                 num_workers = min(num_parts, self.max_workers)
                 if num_workers > 1:
-                    self._parallel_uploader = ParallelUploader(self.fs.file_transfer, num_workers, exit_on_timeout=False)
+                    self._parallel_uploader = ParallelUploader(
+                        self.fs.file_transfer, num_workers, exit_on_timeout=False
+                    )
 
         # Download data
         self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
@@ -882,7 +888,9 @@ class SaturnFile(AbstractBufferedFile):
                     return False
                 elif self.offset and self.max_workers > 1:
                     # At least two full blocks have been written, assume there could be many more
-                    self._parallel_uploader = ParallelUploader(self.fs.file_transfer, self.max_workers, exit_on_timeout=False)
+                    self._parallel_uploader = ParallelUploader(
+                        self.fs.file_transfer, self.max_workers, exit_on_timeout=False
+                    )
                     if num_bytes < self.max_workers * self.blocksize:
                         return False
             elif num_bytes < self._parallel_uploader.num_workers * self.blocksize:
@@ -897,12 +905,16 @@ class SaturnFile(AbstractBufferedFile):
             while retries > 0:
                 completed_parts: List[ObjectStorageCompletePart]
                 if self._parallel_uploader is not None:
-                    completed_parts, uploads_finished = self._parallel_uploader.upload_chunks(chunks)
+                    completed_parts, uploads_finished = self._parallel_uploader.upload_chunks(
+                        chunks
+                    )
                 else:
                     completed_parts = []
                     for chunk in chunks:
                         try:
-                            completed_part = self.fs.file_transfer.upload_part(chunk.data, chunk.part)
+                            completed_part = self.fs.file_transfer.upload_part(
+                                chunk.data, chunk.part
+                            )
                             completed_parts.append(completed_part)
                         except ExpiredSignature:
                             break
@@ -922,9 +934,7 @@ class SaturnFile(AbstractBufferedFile):
                 retries -= 1
 
             if not uploads_finished:
-                raise SaturnError(
-                    f"Upload with ID '{self.upload_id}' was unable to complete."
-                )
+                raise SaturnError(f"Upload with ID '{self.upload_id}' was unable to complete.")
 
             if not buffer_empty:
                 return False

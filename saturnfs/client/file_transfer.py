@@ -312,9 +312,7 @@ class FileTransferClient:
         num_workers = min(len(presigned_upload.parts), max_workers)
         uploader = ParallelUploader(self, num_workers)
         try:
-            chunk_iterator = self._upload_producer(
-                presigned_upload, local_path, file_offset
-            )
+            chunk_iterator = self._upload_producer(presigned_upload, local_path, file_offset)
             return uploader.upload_chunks(chunk_iterator, callback=callback)
         finally:
             uploader.close()
@@ -343,7 +341,9 @@ class ParallelUploader:
     Helper class that manages worker threads for parallel chunk uploading
     """
 
-    def __init__(self, file_transfer: FileTransferClient, num_workers: int, exit_on_timeout: bool = True) -> None:
+    def __init__(
+        self, file_transfer: FileTransferClient, num_workers: int, exit_on_timeout: bool = True
+    ) -> None:
         self.file_transfer = file_transfer
         self.num_workers = num_workers
         self.exit_on_timeout = exit_on_timeout
@@ -354,7 +354,9 @@ class ParallelUploader:
         for _ in range(self.num_workers):
             Thread(target=self._worker, daemon=True).start()
 
-    def upload_chunks(self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None) -> Tuple[List[ObjectStorageCompletePart], bool]:
+    def upload_chunks(
+        self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None
+    ) -> Tuple[List[ObjectStorageCompletePart], bool]:
         num_parts: int = 0
         first_part: int = -1
         all_chunks_read: bool = False
@@ -405,7 +407,9 @@ class ParallelUploader:
                     break
 
                 try:
-                    completed_part = self.file_transfer.upload_part(chunk.data, chunk.part, session=session)
+                    completed_part = self.file_transfer.upload_part(
+                        chunk.data, chunk.part, session=session
+                    )
                 except ExpiredSignature:
                     # Signal that an error has occurred
                     self.stop.set()
