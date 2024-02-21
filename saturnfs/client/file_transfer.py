@@ -105,8 +105,9 @@ class FileTransferClient:
         destination: Union[str, BufferedWriter],
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
+        offset: int = 0,
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
-    ):
+    ) -> int:
         local_path: Optional[str] = None
         if isinstance(destination, str):
             local_path = destination
@@ -117,23 +118,37 @@ class FileTransferClient:
         else:
             outfile = destination
 
+        bytes_written: int = 0
         try:
             if max_workers > 1 and presigned_download.size >= 3 * block_size:
-                self._parallel_download(
+                bytes_written = self._parallel_download(
                     presigned_download,
                     outfile,
                     block_size,
+                    offset=offset,
                     callback=callback,
                     max_workers=max_workers,
                 )
             else:
-                self._download_to_writer(
-                    presigned_download.url, outfile, callback=callback, block_size=block_size
+                headers: Optional[Dict[str, str]] = None
+                if offset:
+                    headers = byte_range_header(offset, presigned_download.size)
+                bytes_written = self._download_to_writer(
+                    presigned_download.url,
+                    outfile,
+                    callback=callback,
+                    block_size=block_size,
+                    headers=headers,
                 )
+        except ExpiredSignature:
+            # If caught here, then no data has been downloaded yet
+            return 0
         finally:
             if local_path:
                 outfile.close()
                 set_last_modified(local_path, presigned_download.updated_at)
+
+        return bytes_written
 
     def _download_to_writer(
         self,
@@ -143,40 +158,46 @@ class FileTransferClient:
         block_size: int = settings.S3_MIN_PART_SIZE,
         stream: bool = True,
         **kwargs,
-    ):
+    ) -> int:
         response = self.aws.get(url, stream=stream, **kwargs)
         if callback is not None:
             content_length = response.headers.get("Content-Length")
             callback.set_size(int(content_length) if content_length else None)
 
+        total_bytes: int = 0
         for chunk in response.iter_content(block_size):
             bytes_written = outfile.write(chunk)
+            total_bytes += bytes_written
             if callback is not None:
                 callback.relative_update(bytes_written)
 
         if callback is not None and callback.size == 0:
             callback.relative_update(0)
         response.close()
+        return total_bytes
 
     def _parallel_download(
         self,
         presigned_download: ObjectStoragePresignedDownload,
         outfile: BufferedWriter,
         block_size: int,
+        offset: int = 0,
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
-    ):
-        num_chunks = ceil(float(presigned_download.size) / block_size)
-        last_chunk_size = presigned_download.size % block_size
+    ) -> int:
+        size = presigned_download.size - offset
+        num_chunks = ceil(float(size) / block_size)
+        last_chunk_size = size % block_size
         num_workers = min(num_chunks, max_workers)
 
         downloader = ParallelDownloader(self, num_workers)
 
         try:
             chunk_iterator = self._download_producer(
-                presigned_download, block_size, num_chunks, last_chunk_size
+                presigned_download, block_size, offset, num_chunks, last_chunk_size
             )
             downloader.download_chunks(outfile, chunk_iterator, callback=callback)
+            return outfile.tell() - offset
         finally:
             downloader.close()
 
@@ -184,6 +205,7 @@ class FileTransferClient:
         self,
         presigned_download: ObjectStoragePresignedDownload,
         block_size: int,
+        offset: int,
         num_chunks: int,
         last_chunk_size: int,
     ) -> Iterable[DownloadPart]:
@@ -197,7 +219,7 @@ class FileTransferClient:
                 chunk_size = block_size
 
             part_number = i + 1
-            start = (part_number - 1) * block_size
+            start = offset + (part_number - 1) * block_size
             end = start + chunk_size
             headers = byte_range_header(start, end)
 
