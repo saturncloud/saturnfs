@@ -674,15 +674,51 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             raise SaturnError("Either lpath or outfile is required")
         download = self.object_storage_client.download_file(remote)
 
-        self.file_transfer.download(download, destination, callback=callback, **kwargs)
+        bytes_written: int = 0
+        retries: int = 5
+        while retries > 0:
+            bytes_written += self.file_transfer.download(
+                download, destination, callback=callback, offset=bytes_written, **kwargs
+            )
+            if bytes_written >= download.size:
+                break
+
+            # Refresh presigned download and retry
+            download = self.object_storage_client.download_file(remote)
+            retries -= 1
+        else:
+            raise SaturnError(f"Download of file {rpath} was unable to complete")
 
     def get_bulk(self, rpaths: List[str], lpaths: List[str], callback: Callback = DEFAULT_CALLBACK):
         callback.set_size(len(lpaths))
         downloads = self._iter_downloads(rpaths, lpaths)
-        for download, lpath in callback.wrap(downloads):
-            kwargs: Dict[str, Any] = {}
-            callback.branch(download.name, lpath, kwargs)
-            self.file_transfer.download(download, lpath, **kwargs)
+        completed: int = 0
+        retries: int = 5
+        offsets: Dict[str, int] = {}
+        while retries > 0:
+            for download, lpath in callback.wrap(downloads):
+                kwargs: Dict[str, Any] = {}
+                callback.branch(download.name, lpath, kwargs)
+                offset = offsets.get(lpath, 0)
+                bytes_written = self.file_transfer.download(
+                    download, lpath, offset=offset, **kwargs
+                )
+                if bytes_written >= download.size:
+                    completed += 1
+                else:
+                    if lpath in offsets:
+                        offsets[lpath] += bytes_written
+                    else:
+                        offsets[lpath] = bytes_written
+                    break
+            else:
+                # All downloads completed
+                break
+
+            # Retry remaining downloads
+            partial_rpaths = rpaths[completed:]
+            partial_lpaths = lpaths[completed:]
+            downloads = self._iter_downloads(partial_rpaths, partial_lpaths)
 
     def _iter_downloads(
         self, rpaths: List[str], lpaths: List[str]
