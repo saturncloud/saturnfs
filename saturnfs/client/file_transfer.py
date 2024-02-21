@@ -9,7 +9,7 @@ from io import BufferedWriter, BytesIO
 from math import ceil
 from queue import Empty, Full, PriorityQueue, Queue
 from threading import Event, Thread
-from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple
+from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple, Union
 
 from fsspec import Callback
 from requests import Session
@@ -164,35 +164,29 @@ class FileTransferClient:
 
         downloader = ParallelDownloader(self, num_workers)
 
-        # Downloads are non-resumable for now
-        with tempfile.TemporaryDirectory(
-            prefix=f".saturnfs_{filename}_", dir=parent_dir
-        ) as tmp_dir:
-            producer_kwargs = {
-                "presigned_download": presigned_download,
-                "download_queue": downloader.download_queue,
-                "tmp_dir": tmp_dir,
-                "block_size": block_size,
-                "num_chunks": num_chunks,
-                "last_chunk_size": last_chunk_size,
-            }
-
-            Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
-            downloader._collector(local_path, num_chunks, callback=callback)
+        try:
+            # Downloads are non-resumable for now
+            with tempfile.TemporaryDirectory(
+                prefix=f".saturnfs_{filename}_", dir=parent_dir
+            ) as tmp_dir:
+                chunk_iterator = self._download_producer(
+                    presigned_download, tmp_dir, block_size, num_chunks, last_chunk_size
+                )
+                with open(local_path, "wb") as f:
+                    downloader.download_chunks(f, chunk_iterator, callback=callback)
+        finally:
             downloader.close()
 
     def _download_producer(
         self,
         presigned_download: ObjectStoragePresignedDownload,
-        download_queue: Queue[Optional[DownloadChunk]],
         tmp_dir: str,
         block_size: int,
         num_chunks: int,
         last_chunk_size: int,
-    ):
+    ) -> Iterable[DownloadChunk]:
         """
-        Generate chunks on download queue to be downloaded
-        Waits for work to be completed, and signals worker shutdown at the end.
+        Generate chunks to be downloaded
         """
         for i in range(num_chunks):
             if i == num_chunks - 1 and last_chunk_size:
@@ -206,10 +200,7 @@ class FileTransferClient:
             headers = byte_range_header(start, end)
 
             tmp_path = os.path.join(tmp_dir, f"part_{part_number}")
-            chunk = DownloadChunk(part_number=part_number, chunk_size=chunk_size, url=presigned_download.url, headers=headers, tmp_path=tmp_path)
-            download_queue.put(chunk)
-        # Wait for workers to finish processing all chunks
-        download_queue.join()
+            yield DownloadChunk(part_number=part_number, chunk_size=chunk_size, url=presigned_download.url, headers=headers, tmp_path=tmp_path)
 
     def _parallel_upload(
         self,
@@ -261,10 +252,23 @@ class ParallelDownloader:
         self.num_workers = num_workers
         self.exit_on_timeout = exit_on_timeout
         self.download_queue: Queue[DownloadChunk] = Queue(2 * num_workers)
-        self.completed_queue: PriorityQueue[DownloadChunk] = PriorityQueue()
+        self.completed_queue: PriorityQueue[Union[DownloadChunk, DownloadStop]] = PriorityQueue()
 
         for _ in range(num_workers):
             Thread(target=self._worker, daemon=True).start()
+
+    def download_chunks(self, f: BufferedWriter, chunks: Iterable[DownloadChunk], callback: Optional[Callback] = None):
+        collector_thread = Thread(target=self._collector, kwargs={"f": f, "callback": callback})
+        collector_thread.start()
+
+        for chunk in chunks:
+            self.download_queue.put(chunk)
+        self.download_queue.join()
+
+        # Signal end of download
+        self.completed_queue.put(DownloadStop())
+        # Wait for collector to finish
+        collector_thread.join()
 
     def close(self):
         # Signal shutdown to download workers
@@ -291,14 +295,13 @@ class ParallelDownloader:
             with open(chunk.tmp_path, "wb") as f:
                 self.file_transfer.download_to_writer(chunk.url, f, headers=chunk.headers, session=session)
 
-            self.download_queue.task_done()
             self.completed_queue.put(chunk)
+            self.download_queue.task_done()
         session.close()
 
     def _collector(
         self,
-        local_path: str,
-        num_chunks: int,
+        f: BufferedWriter,
         callback: Optional[Callback] = None,
     ):
         """
@@ -313,32 +316,28 @@ class ParallelDownloader:
                 f.write(tmp.read())
             os.remove(tmp_path)
 
-        with open(local_path, "wb") as f:
-            done = False
-            while not done:
-                # Get the next completed chunk
-                chunk = self.completed_queue.get()
-                if callback is not None:
-                    callback.relative_update(chunk.chunk_size)
+        done = False
+        while not done:
+            # Get the next completed chunk
+            chunk = self.completed_queue.get()
+            if isinstance(chunk, DownloadStop):
+                done = True
+                return
+            if callback is not None:
+                callback.relative_update(chunk.chunk_size)
 
-                if chunk.part_number == next_part:
-                    # Append chunk to the final file
+            if chunk.part_number == next_part:
+                # Append chunk to the final file
+                _mv(chunk.tmp_path, f)
+                # Check if the next part(s) are already in the heap
+                next_part += 1
+                while len(heap) > 0 and heap[0].part_number == next_part:
+                    chunk = heapq.heappop(heap)
                     _mv(chunk.tmp_path, f)
-                    if next_part == num_chunks:
-                        done = True
-                    else:
-                        # Check if the next part(s) are already in the heap
-                        next_part += 1
-                        while len(heap) > 0 and heap[0].part_number == next_part:
-                            chunk = heapq.heappop(heap)
-                            _mv(chunk.tmp_path, f)
-                            if next_part == num_chunks:
-                                done = True
-                                break
-                            next_part += 1
-                else:
-                    # Push chunk onto the heap to wait for all previous chunks to complete
-                    heapq.heappush(heap, chunk)
+                    next_part += 1
+            else:
+                # Push chunk onto the heap to wait for all previous chunks to complete
+                heapq.heappush(heap, chunk)
 
 
 class ParallelUploader:
@@ -538,8 +537,20 @@ class DownloadChunk:
     headers: Dict[str, str]
     tmp_path: str
 
-    def __lt__(self, other: DownloadChunk):
+    def __lt__(self, other: Union[DownloadChunk, DownloadStop]):
+        if isinstance(other, DownloadStop):
+            return True
         return self.part_number < other.part_number
+
+
+@dataclass
+class DownloadStop:
+    """
+    Sentinal type to mark end of download
+    """
+
+    def __lt__(self, other):
+        return False
 
 
 @dataclass
