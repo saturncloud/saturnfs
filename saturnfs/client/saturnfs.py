@@ -860,6 +860,17 @@ class SaturnFile(AbstractBufferedFile):
         if mode not in {"rb", "wb"}:
             raise NotImplementedError("File mode not supported")
 
+        self.fs = fs
+        self.path = path
+        self.remote = ObjectStorage.parse(path)
+
+        if mode == "rb":
+            # Prefetch download URL and size to skip the extra info request
+            # which could retrieve stale values from the ls cache
+            presigned_download = self._presign_download()
+            if size is None:
+                size = presigned_download.size
+
         if block_size is None:
             if size is not None and size < settings.S3_MIN_PART_SIZE:
                 block_size = size
@@ -870,15 +881,6 @@ class SaturnFile(AbstractBufferedFile):
         elif block_size > settings.S3_MAX_PART_SIZE:
             raise SaturnError(f"Max block size: {settings.S3_MIN_PART_SIZE}")
 
-        self.fs = fs
-        self.path = path
-        self.remote = ObjectStorage.parse(path)
-        if mode == "rb":
-            # Prefetch download URL and size to skip the extra info request
-            # which could retrieve stale values from the ls cache
-            presigned_download = self._presign_download()
-            if size is None:
-                size = presigned_download.size
         self.size = size
 
         super().__init__(
