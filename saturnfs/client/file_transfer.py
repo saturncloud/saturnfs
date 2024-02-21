@@ -114,7 +114,12 @@ class FileTransferClient:
             dirname = os.path.dirname(local_path)
             if dirname:
                 os.makedirs(dirname, exist_ok=True)
-            outfile = open(local_path, "wb")
+
+            if offset:
+                outfile = open(local_path, "ab")
+                outfile.seek(offset)
+            else:
+                outfile = open(local_path, "wb")
         else:
             outfile = destination
 
@@ -276,27 +281,74 @@ class ParallelDownloader:
         self.exit_on_timeout = exit_on_timeout
         self.download_queue: Queue[DownloadPart] = Queue(2 * num_workers)
         self.completed_queue: PriorityQueue[Union[DownloadChunk, DownloadStop]] = PriorityQueue()
+        self.stop = Event()
 
         for _ in range(num_workers):
             Thread(target=self._worker, daemon=True).start()
 
-    def download_chunks(self, f: BufferedWriter, chunks: Iterable[DownloadPart], callback: Optional[Callback] = None):
+    def download_chunks(self, f: BufferedWriter, parts: Iterable[DownloadPart], callback: Optional[Callback] = None):
         collector_thread = Thread(target=self._collector, kwargs={"f": f, "callback": callback}, daemon=True)
         collector_thread.start()
 
-        for chunk in chunks:
-            self.download_queue.put(chunk)
-        self.download_queue.join()
+        all_parts_read: bool = False
+        downloads_finished: bool = False
+        for part in parts:
+            if not self._put_part(part):
+                break
+        else:
+            all_parts_read = True
+
+        def _downloads_finished():
+            nonlocal downloads_finished
+            self.download_queue.join()
+            if not self.stop.is_set():
+                downloads_finished = all_parts_read
+                self.stop.set()
+
+        Thread(target=_downloads_finished, daemon=True).start()
+        self.stop.wait()
+
+        if not downloads_finished:
+            # An error has occurred. Consume remaining download parts on queue
+            self._clear_downloads()
 
         # Signal end of download
         self.completed_queue.put(DownloadStop())
-        # Wait for collector to finish
+        # Wait for collector to finish and clear any remaining state
         collector_thread.join()
+        self._clear_completed()
+        self.stop.clear()
 
     def close(self):
         # Signal shutdown to download workers
         for _ in range(self.num_workers):
             self.download_queue.put(None)
+
+    def _put_part(self, part: DownloadPart, poll_interval: int = 5) -> bool:
+        while True:
+            try:
+                self.download_queue.put(part, timeout=poll_interval)
+                return True
+            except Full:
+                if self.stop.is_set():
+                    # Error occurred during download, likely an expired signature
+                    return False
+
+    def _clear_downloads(self):
+        while True:
+            try:
+                self.download_queue.get_nowait()
+                self.download_queue.task_done()
+            except Empty:
+                break
+
+    def _clear_completed(self):
+        while True:
+            try:
+                self.completed_queue.get_nowait()
+                self.completed_queue.task_done()
+            except Empty:
+                break
 
     def _worker(self):
         """
@@ -316,9 +368,19 @@ class ParallelDownloader:
                     break
 
                 temp_file = tempfile.TemporaryFile(mode="w+b")
-                self.file_transfer._download_to_writer(part.url, temp_file, headers=part.headers, session=session)
-                temp_file.seek(0)
+                try:
+                    self.file_transfer._download_to_writer(part.url, temp_file, headers=part.headers, session=session)
+                except ExpiredSignature:
+                    # Signal that an error has occurred
+                    self.stop.set()
+                    self.download_queue.task_done()
+                    temp_file.close()
+                    if self.exit_on_timeout:
+                        return
+                    else:
+                        continue
 
+                temp_file.seek(0)
                 self.completed_queue.put(DownloadChunk(part.part_number, part.size, temp_file))
                 self.download_queue.task_done()
 
