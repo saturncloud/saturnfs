@@ -37,6 +37,7 @@ class ObjectStorageCompletedUpload(DataclassSchema):
 class ObjectStorageCompletePart(DataclassSchema):
     etag: str
     part_number: int
+    size: int = field(default=0, metadata={"load_only": True})
 
 
 @marshmallow_dataclass.dataclass

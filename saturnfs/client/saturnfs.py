@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import weakref
 from datetime import datetime
@@ -10,11 +11,17 @@ from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
+from fsspec.generic import rsync
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
+from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
 from fsspec.utils import other_paths
 from saturnfs import settings
-from saturnfs.client.file_transfer import FileTransferClient
+from saturnfs.client.file_transfer import (
+    FileTransferClient,
+    ParallelUploader,
+    UploadChunk,
+)
 from saturnfs.client.object_storage import ObjectStorageClient
 from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
@@ -125,6 +132,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
 
         callback.set_size(len(path2))
         for p1, p2 in zip(path1, path2):
+            if p1.endswith("/"):
+                # Directories aren't explicitly created
+                continue
             callback.branch(p1, p2, kwargs)
             try:
                 self.cp_file(p1, p2, **kwargs)
@@ -222,11 +232,15 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         parent = self._parent(path)
         parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
         if parent_files is not None:
-            files = [
-                f
-                for f in parent_files
-                if f.name == path or (f.name.rstrip("/") == path and f.is_dir)
-            ]
+            files = []
+            for f in parent_files:
+                name = f.name
+                if name.startswith(self.protocol):
+                    # Fsspec rsync adds protocol back onto name
+                    name = self._strip_protocol(name)
+                if name == path or (f.is_dir and name.rstrip("/") == path):
+                    files.append(f)
+
             if len(files) == 0:
                 # parent dir was listed but did not contain this file
                 raise FileNotFoundError(path)
@@ -331,16 +345,19 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         **kwargs,
     ) -> Union[List[str], Dict[str, ObjectStorageInfo]]:
         path = self._strip_protocol(path)
-        if maxdepth is None and "/" in path:
+        if not withdirs and maxdepth is None and "/" in path:
             # Can list more efficiently by ignoring / delimiters rather than walking the file tree
+            # Can't do this when withdirs is true since undelimited listing skips directories
             files: List[ObjectStorageInfo] = []
             prefix = ObjectStoragePrefix.parse(path + "/")
 
             for result in self.object_storage_client.list_iter(prefix, delimited=False):
                 files.extend(result.files)
+
+            files.sort(key=lambda f: f.name)
             if detail:
                 return {file.name: file for file in files}
-            return sorted(file.name for file in files)
+            return [file.name for file in files]
         return super().find(path, maxdepth=maxdepth, withdirs=withdirs, detail=detail, **kwargs)
 
     @overload
@@ -538,6 +555,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             **kwargs,
         )
 
+    # pylint: disable=unused-argument
     def put_file(
         self,
         lpath: str,
@@ -548,6 +566,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         **kwargs,
     ):
         """Copy single file to remote"""
+        destination = ObjectStorage.parse(rpath)
         if os.path.isdir(lpath):
             callback.set_size(0)
             callback.relative_update(0)
@@ -560,18 +579,43 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             elif file_size < size:
                 raise SaturnError("File is smaller than the given size")
             callback.set_size(size)
-            f1.seek(0)
 
-            with self.open(rpath, mode="wb", block_size=block_size, size=size, **kwargs) as f2:
-                while f1.tell() < size:
-                    data = f1.read(self.blocksize)
-                    segment_len = f2.write(data)
-                    if segment_len is None:
-                        segment_len = len(data)
-                    callback.relative_update(segment_len)
+        if block_size is None and size > 10 * settings.S3_MIN_PART_SIZE:
+            if size / settings.S3_MAX_NUM_PARTS > settings.S3_MIN_PART_SIZE:
+                block_size = settings.S3_MAX_PART_SIZE
+            else:
+                block_size = settings.S3_MIN_PART_SIZE
 
-            if size == 0:
-                callback.relative_update(0)
+        retries = 5
+        file_offset = 0
+        completed_parts: List[ObjectStorageCompletePart] = []
+        presigned_upload = self.object_storage_client.start_upload(
+            destination, size, part_size=block_size
+        )
+        if block_size is None:
+            block_size = presigned_upload.parts[0].size
+
+        upload_finished = False
+        while retries > 0:
+            _completed_parts, upload_finished = self.file_transfer.upload(
+                lpath, presigned_upload, file_offset=file_offset, callback=callback
+            )
+            completed_parts.extend(_completed_parts)
+            if upload_finished:
+                break
+
+            file_offset = len(completed_parts) * block_size
+            presigned_upload = self.object_storage_client.resume_upload(
+                presigned_upload.upload_id, len(completed_parts) + 1
+            )
+            retries -= 1
+
+        if not upload_finished:
+            raise SaturnError(
+                f"Upload with ID '{presigned_upload.upload_id}' was unable to complete."
+            )
+        self.object_storage_client.complete_upload(presigned_upload.upload_id, completed_parts)
+
         self.invalidate_cache(rpath)
 
     def cp_file(  # pylint: disable=unused-argument
@@ -694,6 +738,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                     self.invalidate_cache(path)
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
+    def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
+        return rsync(source, destination, delete_missing=delete_missing, **kwargs)
+
     def list_uploads(
         self, path: str, is_copy: Optional[bool] = None
     ) -> List[ObjectStorageUploadInfo]:
@@ -772,6 +819,7 @@ class SaturnFile(AbstractBufferedFile):
         cache_type: str = "bytes",
         cache_options: Optional[Dict[str, Any]] = None,
         size: Optional[int] = None,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         **kwargs,
     ):
         if mode not in {"rb", "wb"}:
@@ -814,70 +862,135 @@ class SaturnFile(AbstractBufferedFile):
         self.upload_id: str = ""
         self.presigned_upload_parts: List[ObjectStoragePresignedPart] = []
         self.completed_upload_parts: List[ObjectStorageCompletePart] = []
+        self.max_workers = max(1, max_workers)
+
+        if mode == "wb":
+            # Avoid the overhead of parallel uploading until we know a significant amount of data
+            # will be written to the file
+            self._parallel_uploader: Optional[ParallelUploader] = None
+            if size is not None:
+                num_parts = math.ceil(float(size) / block_size)
+                num_workers = min(num_parts, self.max_workers)
+                if num_workers > 1:
+                    self._parallel_uploader = ParallelUploader(
+                        self.fs.file_transfer, num_workers, exit_on_timeout=False
+                    )
 
         # Download data
         self.presigned_download: Optional[ObjectStoragePresignedDownload] = None
 
     def _upload_chunk(self, final: bool = False) -> bool:
         num_bytes = self.buffer.tell()
-        data: Optional[bytes] = None
-        if not final and num_bytes < self.blocksize:
+        if not final:
             # Defer upload until there are more blocks buffered
-            return False
-        else:
-            self.buffer.seek(0)
-            data = self.buffer.read(self.blocksize)
-
-        if num_bytes > 0 or final and len(self.completed_upload_parts) == 0:
-            part_num = len(self.completed_upload_parts) + 1
-            self._check_upload_parts(num_bytes, final=final)
-
-            while data is not None:
-                self._upload_part(data, part_num, num_bytes, final)
-
-                # Get next chunk
-                part_num += 1
-                remaining = num_bytes - self.buffer.tell()
-                if (final and remaining > 0) or (not final and remaining >= self.blocksize):
-                    data = self.buffer.read(self.blocksize)
-                elif remaining == 0:
-                    data = None
-                else:
-                    # Defer upload of chunks smaller than
-                    # blocksize until the last part
-                    buffer = BytesIO()
-                    buffer.write(self.buffer.read())
-                    if self.offset is None:
-                        self.offset = 0
-                    self.offset += self.buffer.seek(0, 2)
-                    self.buffer = buffer
+            if self._parallel_uploader is None:
+                if num_bytes < self.blocksize:
                     return False
+                elif self.offset and self.max_workers > 1:
+                    # At least two full blocks have been written, assume there could be many more
+                    self._parallel_uploader = ParallelUploader(
+                        self.fs.file_transfer, self.max_workers, exit_on_timeout=False
+                    )
+                    if num_bytes < self.max_workers * self.blocksize:
+                        return False
+            elif num_bytes < self._parallel_uploader.num_workers * self.blocksize:
+                return False
+
+        # Write chunks if there is data, or this is the final (and only) chunk of a zero-byte file
+        if num_bytes > 0 or (final and len(self.completed_upload_parts) == 0):
+            chunks, buffer_empty = self._collect_chunks(num_bytes, final)
+
+            retries = 5
+            uploads_finished: bool = False
+            while retries > 0:
+                completed_parts: List[ObjectStorageCompletePart]
+                if self._parallel_uploader is not None:
+                    completed_parts, uploads_finished = self._parallel_uploader.upload_chunks(
+                        chunks
+                    )
+                else:
+                    completed_parts = []
+                    for chunk in chunks:
+                        try:
+                            completed_part = self.fs.file_transfer.upload_part(
+                                chunk.data, chunk.part
+                            )
+                            completed_parts.append(completed_part)
+                        except ExpiredSignature:
+                            break
+                    else:
+                        uploads_finished = True
+
+                self.completed_upload_parts.extend(completed_parts)
+                if uploads_finished:
+                    break
+
+                # Retry chunks that were not successfully uploaded
+                chunks = chunks[len(completed_parts) :]
+                num_bytes = sum(c.part.size for c in chunks)
+                self._check_upload_parts(num_bytes, final=final, refresh=True)
+                for chunk in chunks:
+                    chunk.part = self.presigned_upload_parts[chunk.part.part_number - 1]
+                retries -= 1
+
+            if not uploads_finished:
+                raise SaturnError(f"Upload with ID '{self.upload_id}' was unable to complete.")
+
+            if not buffer_empty:
+                return False
 
         if self.autocommit and final:
             self.commit()
         return not final
 
-    def _upload_part(
-        self, data: bytes, part_num: int, total_bytes: int, final: bool, retries: int = 5
-    ):
-        while retries > 0:
-            part = self.presigned_upload_parts[part_num - 1]
-            try:
-                completed_part = self.fs.file_transfer.upload_part(data, part)
-            except ExpiredSignature:
-                self._check_upload_parts(total_bytes, final=final, refresh=True)
-            else:
-                self.completed_upload_parts.append(completed_part)
-                return
+    def _collect_chunks(self, num_bytes: int, final: bool) -> Tuple[List[UploadChunk], bool]:
+        part_num = len(self.completed_upload_parts) + 1
+        self._check_upload_parts(num_bytes, final=final)
 
-            retries -= 1
+        self.buffer.seek(0)
+        data: Optional[bytes] = self.buffer.read(self.blocksize)
+
+        buffer_empty: bool = False
+        chunks: List[UploadChunk] = []
+        while data is not None:
+            part = self.presigned_upload_parts[part_num - 1]
+            chunk = UploadChunk(part, data)
+            chunks.append(chunk)
+
+            # Get next chunk
+            part_num += 1
+            remaining = num_bytes - self.buffer.tell()
+            if (final and remaining > 0) or (not final and remaining >= self.blocksize):
+                data = self.buffer.read(self.blocksize)
+            elif remaining == 0:
+                data = None
+                buffer_empty = True
+            else:
+                # Defer upload of chunks smaller than
+                # blocksize until the last part
+                buffer = BytesIO()
+                buffer.write(self.buffer.read())
+                if self.offset is None:
+                    self.offset = 0
+                self.offset += self.buffer.seek(0, 2)
+                self.buffer = buffer
+                break
+
+        return chunks, buffer_empty
 
     def commit(self):
         if self.upload_id:
+            if self._parallel_uploader is not None:
+                self._parallel_uploader.close()
+                self._parallel_uploader = None
+
             self.fs.object_storage_client.complete_upload(
                 self.upload_id, self.completed_upload_parts
             )
             self.fs.invalidate_cache(self.path)
+            self.upload_id = ""
+        else:
+            raise SaturnError("File cannot be committed without an active upload")
 
     def discard(self):
         if self.upload_id:
@@ -989,3 +1102,6 @@ class SaturnFile(AbstractBufferedFile):
         if presigned_upload is None:
             raise SaturnError("Failed to retrieve presigned upload")
         self.presigned_upload_parts.extend(presigned_upload.parts)
+
+
+register_implementation(SaturnFS.protocol, SaturnFS)

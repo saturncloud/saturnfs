@@ -174,6 +174,24 @@ def delete(path: str, recursive: bool):
     sfs.rm(path, recursive=recursive)
 
 
+@cli.command("rsync")
+@click.argument("source_path", type=str)
+@click.argument("destination_path", type=str)
+@click.option(
+    "-d",
+    "--delete-missing",
+    is_flag=True,
+    default=False,
+    help="Delete paths from the destination that are missing in the source",
+)
+def rsync(source_path: str, destination_path: str, delete_missing: bool):
+    """
+    Recursively sync files between two directory trees
+    """
+    sfs = SaturnFS()
+    sfs.rsync(source_path, destination_path, delete_missing=delete_missing)
+
+
 @cli.command("ls")
 @click.argument("prefix", type=str, required=False, default="")
 @click.option(

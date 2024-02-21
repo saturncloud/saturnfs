@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BufferedWriter
 from math import ceil
-from queue import Full, PriorityQueue, Queue
-from threading import Thread
-from typing import Any, BinaryIO, List, Optional, Tuple
+from queue import Empty, Full, PriorityQueue, Queue
+from threading import Event, Thread
+from typing import Any, BinaryIO, Iterable, List, Optional, Tuple
 
 from fsspec import Callback
 from requests import Session
@@ -34,8 +34,22 @@ class FileTransferClient:
         self.aws = AWSPresignedClient()
 
     def upload(
-        self, local_path: str, presigned_upload: ObjectStoragePresignedUpload, file_offset: int = 0
+        self,
+        local_path: str,
+        presigned_upload: ObjectStoragePresignedUpload,
+        file_offset: int = 0,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        callback: Optional[Callback] = None,
     ) -> Tuple[List[ObjectStorageCompletePart], bool]:
+        if max_workers > 1 and len(presigned_upload.parts) > 1:
+            return self._parallel_upload(
+                local_path,
+                presigned_upload,
+                file_offset=file_offset,
+                max_workers=max_workers,
+                callback=callback,
+            )
+
         completed_parts: List[ObjectStorageCompletePart] = []
         with open(local_path, "rb") as f:
             f.seek(file_offset)
@@ -43,11 +57,15 @@ class FileTransferClient:
                 chunk = FileLimiter(f, part.size)
                 try:
                     completed_parts.append(self.upload_part(chunk, part))
+                    if callback is not None:
+                        callback.relative_update(part.size)
                 except ExpiredSignature:
                     return completed_parts, False
         return completed_parts, True
 
-    def upload_part(self, data: Any, part: ObjectStoragePresignedPart) -> ObjectStorageCompletePart:
+    def upload_part(
+        self, data: Any, part: ObjectStoragePresignedPart, **kwargs
+    ) -> ObjectStorageCompletePart:
         response = self.aws.put(
             part.url,
             data,
@@ -56,9 +74,10 @@ class FileTransferClient:
                 "Content-Length": str(part.size),
                 **part.headers,
             },
+            **kwargs,
         )
         etag = self.aws.parse_etag(response)
-        return ObjectStorageCompletePart(part_number=part.part_number, etag=etag)
+        return ObjectStorageCompletePart(part_number=part.part_number, etag=etag, size=part.size)
 
     def copy(
         self, presigned_copy: ObjectStoragePresignedUpload
@@ -75,7 +94,9 @@ class FileTransferClient:
     def copy_part(self, copy_part: ObjectStoragePresignedPart) -> ObjectStorageCompletePart:
         response = self.aws.put(copy_part.url, headers=copy_part.headers)
         etag = self.aws.parse_etag(response)
-        return ObjectStorageCompletePart(part_number=copy_part.part_number, etag=etag)
+        return ObjectStorageCompletePart(
+            part_number=copy_part.part_number, etag=etag, size=copy_part.size
+        )
 
     def download(
         self,
@@ -83,7 +104,7 @@ class FileTransferClient:
         local_path: str,
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
     ):
         dirname = os.path.dirname(local_path)
         if dirname:
@@ -132,7 +153,7 @@ class FileTransferClient:
         presigned_download: ObjectStoragePresignedDownload,
         local_path: str,
         block_size: int,
-        max_workers: int = 10,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         callback: Optional[Callback] = None,
     ):
         filename = os.path.basename(local_path)
@@ -166,7 +187,7 @@ class FileTransferClient:
             Thread(target=self._download_producer, kwargs=producer_kwargs, daemon=True).start()
             for _ in range(num_workers):
                 Thread(target=self._download_worker, kwargs=worker_kwargs, daemon=True).start()
-            self._reconstruct(completed_queue, local_path, num_chunks, callback=callback)
+            self._download_collector(completed_queue, local_path, num_chunks, callback=callback)
 
     def _download_producer(
         self,
@@ -234,7 +255,7 @@ class FileTransferClient:
             completed_queue.put(chunk)
         session.close()
 
-    def _reconstruct(
+    def _download_collector(
         self,
         completed_queue: PriorityQueue[DownloadChunk],
         local_path: str,
@@ -280,8 +301,199 @@ class FileTransferClient:
                     # Push chunk onto the heap to wait for all previous chunks to complete
                     heapq.heappush(heap, chunk)
 
+    def _parallel_upload(
+        self,
+        local_path: str,
+        presigned_upload: ObjectStoragePresignedUpload,
+        file_offset: int = 0,
+        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        callback: Optional[Callback] = None,
+    ):
+        num_workers = min(len(presigned_upload.parts), max_workers)
+        uploader = ParallelUploader(self, num_workers)
+        try:
+            chunk_iterator = self._upload_producer(presigned_upload, local_path, file_offset)
+            return uploader.upload_chunks(chunk_iterator, callback=callback)
+        finally:
+            uploader.close()
+
+    def _upload_producer(
+        self,
+        presigned_upload: ObjectStoragePresignedUpload,
+        local_path: str,
+        file_offset: int,
+    ) -> Iterable[UploadChunk]:
+        """
+        Generate chunks on upload queue to be uploaded
+        Waits for work to be completed, and signals worker shutdown at the end.
+        """
+        with open(local_path, "rb") as f:
+            f.seek(file_offset)
+            for part in presigned_upload.parts:
+                yield UploadChunk(part=part, data=f.read(part.size))
+
     def close(self):
         self.aws.close()
+
+
+class ParallelUploader:
+    """
+    Helper class that manages worker threads for parallel chunk uploading
+    """
+
+    def __init__(
+        self, file_transfer: FileTransferClient, num_workers: int, exit_on_timeout: bool = True
+    ) -> None:
+        self.file_transfer = file_transfer
+        self.num_workers = num_workers
+        self.exit_on_timeout = exit_on_timeout
+        self.upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * self.num_workers)
+        self.completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
+        self.stop = Event()
+
+        for _ in range(self.num_workers):
+            Thread(target=self._worker, daemon=True).start()
+
+    def upload_chunks(
+        self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None
+    ) -> Tuple[List[ObjectStorageCompletePart], bool]:
+        num_parts: int = 0
+        first_part: int = -1
+        all_chunks_read: bool = False
+        for chunk in chunks:
+            if first_part == -1:
+                first_part = chunk.part.part_number
+            if not self._put_chunk(chunk):
+                break
+            num_parts += 1
+        else:
+            all_chunks_read = True
+
+        if first_part == -1:
+            # No chunks given
+            return [], True
+
+        self._wait()
+        completed_parts, uploads_finished = self._collect(first_part, num_parts, callback=callback)
+        self.stop.clear()
+        return completed_parts, uploads_finished and all_chunks_read
+
+    def close(self):
+        # Signal shutdown to upload workers
+        for _ in range(self.num_workers):
+            self.upload_queue.put(None)
+
+    def _put_chunk(self, chunk: UploadChunk, poll_interval: int = 5) -> bool:
+        while True:
+            try:
+                self.upload_queue.put(chunk, timeout=poll_interval)
+                return True
+            except Full:
+                if self.stop.is_set():
+                    # Error occurred during upload, likely an expired signature
+                    return False
+
+    def _worker(self):
+        with Session() as session:
+            while True:
+                chunk = self.upload_queue.get()
+                if chunk is None:
+                    # No more upload tasks. Put another sentinal
+                    # on the queue just in case, then break.
+                    try:
+                        self.upload_queue.put_nowait(None)
+                    except Full:
+                        pass
+                    break
+
+                try:
+                    completed_part = self.file_transfer.upload_part(
+                        chunk.data, chunk.part, session=session
+                    )
+                except ExpiredSignature:
+                    # Signal that an error has occurred
+                    self.stop.set()
+                    self.upload_queue.task_done()
+                    if self.exit_on_timeout:
+                        return
+                    else:
+                        continue
+
+                self.upload_queue.task_done()
+                self.completed_queue.put(completed_part)
+
+    def _wait(self):
+        # Wait for workers to finish processing all chunks, or exit due to expired signatures
+        uploads_finished = False
+
+        def _uploads_finished():
+            nonlocal uploads_finished
+            self.upload_queue.join()
+            if not self.stop.is_set():
+                uploads_finished = True
+                self.stop.set()
+
+        uploads_finished_thread = Thread(target=_uploads_finished, daemon=True)
+        uploads_finished_thread.start()
+        self.stop.wait()
+
+        if not uploads_finished:
+            # Consume any remaining chunks
+            while True:
+                try:
+                    self.upload_queue.get_nowait()
+                    self.upload_queue.task_done()
+                except Empty:
+                    break
+
+            # Wait for any remaining worker tasks putting completed parts on the completed_queue
+            # Join the thread instead of queue to ensure there is no race-condition when
+            # worker threads are signaled to shutdown (otherwise uploads_finished_thread could leak)
+            uploads_finished_thread.join()
+
+            # Signal error to the collector
+            self.completed_queue.put(None)
+
+    def _collect(
+        self,
+        first_part: int,
+        num_parts: int,
+        callback: Optional[Callback] = None,
+    ):
+        # Collect completed parts
+        completed_parts: List[ObjectStorageCompletePart] = []
+        uploads_finished: bool = False
+        while True:
+            completed_part = self.completed_queue.get()
+            if completed_part is None:
+                # Error detected in one or more workers
+                # Producer only puts None on the queue when all workers are done
+                self.completed_queue.task_done()
+                break
+
+            completed_parts.append(completed_part)
+            self.completed_queue.task_done()
+
+            if callback is not None:
+                callback.relative_update(completed_part.size)
+
+            if len(completed_parts) == num_parts:
+                uploads_finished = True
+                break
+
+        completed_parts.sort(key=lambda p: p.part_number)
+        completed_len = len(completed_parts)
+        if not uploads_finished and completed_len > 0:
+            # Throw out non-sequential completed parts for simpler retry logic
+            last_seen = first_part - 1
+            for i, part in enumerate(completed_parts):
+                if part.part_number != last_seen + 1:
+                    completed_len = i
+                    break
+                last_seen = part.part_number
+            completed_parts = completed_parts[:completed_len]
+
+        return completed_parts, uploads_finished
 
 
 class FileLimiter:
@@ -321,6 +533,16 @@ class DownloadChunk:
 
     def __lt__(self, other: DownloadChunk):
         return self.part_number < other.part_number
+
+
+@dataclass
+class UploadChunk:
+    """
+    Stores information for parrallel chunk upload
+    """
+
+    part: ObjectStoragePresignedPart
+    data: Any
 
 
 def set_last_modified(local_path: str, last_modified: datetime):
