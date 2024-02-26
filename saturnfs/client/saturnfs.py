@@ -1,9 +1,9 @@
 from __future__ import annotations
-from copy import copy
 
 import math
 import os
 import weakref
+from copy import copy
 from datetime import datetime
 from glob import has_magic
 from io import BytesIO, TextIOWrapper
@@ -12,7 +12,8 @@ from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
-from fsspec.generic import rsync
+from fsspec.core import split_protocol
+from fsspec.generic import GenericFileSystem, rsync
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
 from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
@@ -775,9 +776,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
     def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
-        if source.startswith(settings.SATURNFS_FILE_PREFIX):
-            # Increase default blocksize for rsync to take advantage of parallel download
-            kwargs.setdefault("blocksize", 5 * settings.S3_MIN_PART_SIZE)
+        kwargs["fs"] = SaturnGenericFilesystem(sfs=self)
         return rsync(source, destination, delete_missing=delete_missing, **kwargs)
 
     def list_uploads(
@@ -1221,6 +1220,55 @@ class SaturnFile(AbstractBufferedFile):
         if presigned_upload is None:
             raise SaturnError("Failed to retrieve presigned upload")
         self.presigned_upload_parts.extend(presigned_upload.parts)
+
+
+class SaturnGenericFilesystem(GenericFileSystem):
+    """
+    Wraps fsspec GenericFilesystem to make full use of parallel download/upload
+    """
+
+    def __init__(
+        self,
+        default_method="current",
+        sfs: Optional[SaturnFS] = None,
+        **kwargs,
+    ):
+        self.sfs = sfs or SaturnFS()
+        super().__init__(default_method, **kwargs)
+
+    async def _cp_file(
+        self,
+        url: Any,
+        url2: Any,
+        blocksize: int = settings.S3_MIN_PART_SIZE,
+        callback: Callback = DEFAULT_CALLBACK,
+        **kwargs,
+    ):
+        # If src or dst is local, then we can handle the file more efficiently
+        # by put/get instead of opening as a buffered file
+        proto1, path1 = split_protocol(url)
+        proto2, path2 = split_protocol(url2)
+        if self._is_local(proto1) and self._is_saturnfs(proto2):
+            if blocksize < settings.S3_MIN_PART_SIZE:
+                blocksize = settings.S3_MIN_PART_SIZE
+            return self.sfs.put_file(
+                path1, path2, callback=callback, block_size=blocksize, **kwargs
+            )
+        elif self._is_saturnfs(proto1) and self._is_local(proto2):
+            return self.sfs.get_file(
+                path1, path2, callback=callback, block_size=blocksize, **kwargs
+            )
+
+        return await super()._cp_file(url, url2, blocksize, callback, **kwargs)
+
+    def _is_local(self, protocol: str) -> bool:
+        if isinstance(LocalFileSystem.protocol, tuple):
+            # Latest fsspec accepts tuple of protos
+            return protocol in LocalFileSystem.protocol
+        return protocol == LocalFileSystem.protocol
+
+    def _is_saturnfs(self, protocol: str) -> bool:
+        return protocol == SaturnFS.protocol
 
 
 register_implementation(SaturnFS.protocol, SaturnFS)
