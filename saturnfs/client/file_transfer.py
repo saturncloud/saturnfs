@@ -109,6 +109,7 @@ class FileTransferClient:
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
     ) -> int:
         local_path: Optional[str] = None
+        outfile: BinaryIO
         if isinstance(destination, str):
             local_path = destination
             dirname = os.path.dirname(local_path)
