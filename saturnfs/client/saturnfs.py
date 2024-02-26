@@ -1,4 +1,5 @@
 from __future__ import annotations
+from copy import copy
 
 import math
 import os
@@ -220,7 +221,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 results = self._lsshared(path)
             else:
                 results = self._lsorg()
-            self.dircache[path] = results
+            self.dircache[path] = [copy(f) for f in results]
 
         if detail:
             return results
@@ -229,19 +230,15 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
     def _ls_from_cache(self, path: str) -> Optional[List[ObjectStorageInfo]]:
         path = self._strip_protocol(path)
         if path in self.dircache:
-            return self.dircache[path]
+            return [copy(f) for f in self.dircache[path]]
 
         parent = self._parent(path)
         parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
         if parent_files is not None:
             files = []
             for f in parent_files:
-                name = f.name
-                if name.startswith(self.protocol):
-                    # Fsspec rsync adds protocol back onto name
-                    name = self._strip_protocol(name)
-                if name == path or (f.is_dir and name.rstrip("/") == path):
-                    files.append(f)
+                if f.name == path or (f.is_dir and f.name.rstrip("/") == path):
+                    files.append(copy(f))
 
             if len(files) == 0:
                 # parent dir was listed but did not contain this file
