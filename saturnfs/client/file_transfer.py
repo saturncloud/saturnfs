@@ -388,15 +388,14 @@ class ParallelDownloader:
                     self.file_transfer._download_to_writer(
                         part.url, buffer, headers=part.headers, session=session
                     )
-                except ExpiredSignature:
+                except Exception as e:
                     # Signal that an error has occurred
                     self.stop.set()
                     self.download_queue.task_done()
                     buffer.close()
-                    if self.exit_on_timeout:
-                        return
-                    else:
+                    if isinstance(e, ExpiredSignature) and not self.exit_on_timeout:
                         continue
+                    return
 
                 buffer.seek(0)
                 self.completed_queue.put(DownloadChunk(part.part_number, part.size, buffer))
@@ -515,15 +514,13 @@ class ParallelUploader:
                     completed_part = self.file_transfer.upload_part(
                         chunk.data, chunk.part, session=session
                     )
-                except ExpiredSignature:
+                except Exception as e:
                     # Signal that an error has occurred
                     self.stop.set()
                     self.upload_queue.task_done()
-                    if self.exit_on_timeout:
-                        return
-                    else:
+                    if isinstance(e, ExpiredSignature) and not self.exit_on_timeout:
                         continue
-
+                    return
                 self.upload_queue.task_done()
                 self.completed_queue.put(completed_part)
 
