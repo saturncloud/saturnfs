@@ -116,10 +116,10 @@ class FileTransferClient:
                 os.makedirs(dirname, exist_ok=True)
 
             if offset:
-                outfile = open(local_path, "ab")
+                outfile = open(local_path, "ab")  # pylint: disable=consider-using-with
                 outfile.seek(offset)
             else:
-                outfile = open(local_path, "wb")
+                outfile = open(local_path, "wb")  # pylint: disable=consider-using-with
         else:
             outfile = destination
 
