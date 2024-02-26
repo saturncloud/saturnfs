@@ -19,6 +19,7 @@ from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
 from fsspec.utils import other_paths
 from saturnfs import settings
+from saturnfs.cli.callback import FileOpCallback
 from saturnfs.client.file_transfer import (
     DownloadPart,
     FileTransferClient,
@@ -1248,18 +1249,23 @@ class SaturnGenericFilesystem(GenericFileSystem):
         # by put/get instead of opening as a buffered file
         proto1, path1 = split_protocol(url)
         proto2, path2 = split_protocol(url2)
+        if isinstance(callback, FileOpCallback) and not callback.inner:
+            callback.branch(path1, path2, kwargs)
+        else:
+            kwargs["callback"] = callback
+
         if self._is_local(proto1) and self._is_saturnfs(proto2):
             if blocksize < settings.S3_MIN_PART_SIZE:
                 blocksize = settings.S3_MIN_PART_SIZE
             return self.sfs.put_file(
-                path1, path2, callback=callback, block_size=blocksize, **kwargs
+                path1, path2, block_size=blocksize, **kwargs
             )
         elif self._is_saturnfs(proto1) and self._is_local(proto2):
             return self.sfs.get_file(
-                path1, path2, callback=callback, block_size=blocksize, **kwargs
+                path1, path2, block_size=blocksize, **kwargs
             )
 
-        return await super()._cp_file(url, url2, blocksize, callback, **kwargs)
+        return await super()._cp_file(url, url2, blocksize, **kwargs)
 
     def _is_local(self, protocol: str) -> bool:
         if isinstance(LocalFileSystem.protocol, tuple):

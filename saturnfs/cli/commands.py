@@ -177,6 +177,7 @@ def delete(path: str, recursive: bool):
 @cli.command("rsync")
 @click.argument("source_path", type=str)
 @click.argument("destination_path", type=str)
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Do not print file operations")
 @click.option(
     "-d",
     "--delete-missing",
@@ -184,12 +185,24 @@ def delete(path: str, recursive: bool):
     default=False,
     help="Delete paths from the destination that are missing in the source",
 )
-def rsync(source_path: str, destination_path: str, delete_missing: bool):
+def rsync(source_path: str, destination_path: str, delete_missing: bool, quiet: bool):
     """
     Recursively sync files between two directory trees
     """
     sfs = SaturnFS()
-    sfs.rsync(source_path, destination_path, delete_missing=delete_missing)
+
+    src_is_local = not source_path.startswith(settings.SATURNFS_FILE_PREFIX)
+    dst_is_local = not destination_path.startswith(settings.SATURNFS_FILE_PREFIX)
+    if src_is_local and dst_is_local:
+        raise SaturnError(PathErrors.AT_LEAST_ONE_REMOTE_PATH)
+
+    if quiet:
+        callback = NoOpCallback()
+    else:
+        operation = file_op(src_is_local, dst_is_local)
+        callback = FileOpCallback(operation=operation)
+
+    sfs.rsync(source_path, destination_path, delete_missing=delete_missing, callback=callback)
 
 
 @cli.command("ls")
