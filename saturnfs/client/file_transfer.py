@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-from io import BufferedReader, BufferedWriter, BytesIO
+from io import BufferedReader, BytesIO
 from math import ceil
 from queue import Empty, Full, PriorityQueue, Queue
 from threading import Event, Thread
@@ -102,7 +102,7 @@ class FileTransferClient:
     def download(
         self,
         presigned_download: ObjectStoragePresignedDownload,
-        destination: Union[str, BufferedWriter],
+        destination: Union[str, BinaryIO],
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
         offset: int = 0,
@@ -159,7 +159,7 @@ class FileTransferClient:
     def _download_to_writer(
         self,
         url: str,
-        outfile: BufferedWriter,
+        outfile: BinaryIO,
         callback: Optional[Callback] = None,
         block_size: int = settings.S3_MIN_PART_SIZE,
         stream: bool = True,
@@ -185,7 +185,7 @@ class FileTransferClient:
     def _parallel_download(
         self,
         presigned_download: ObjectStoragePresignedDownload,
-        outfile: BufferedWriter,
+        outfile: BinaryIO,
         block_size: int,
         offset: int = 0,
         max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
@@ -295,7 +295,7 @@ class ParallelDownloader:
             Thread(target=self._worker, daemon=True).start()
 
     def download_chunks(
-        self, f: BufferedWriter, parts: Iterable[DownloadPart], callback: Optional[Callback] = None
+        self, f: BinaryIO, parts: Iterable[DownloadPart], callback: Optional[Callback] = None
     ):
         collector_thread = Thread(
             target=self._collector, kwargs={"f": f, "callback": callback}, daemon=True
@@ -404,7 +404,7 @@ class ParallelDownloader:
 
     def _collector(
         self,
-        f: BufferedWriter,
+        f: BinaryIO,
         callback: Optional[Callback] = None,
     ):
         """

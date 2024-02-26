@@ -5,8 +5,8 @@ import os
 import weakref
 from datetime import datetime
 from glob import has_magic
-from io import BufferedWriter, BytesIO, TextIOWrapper
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, overload
+from io import BytesIO, TextIOWrapper
+from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple, Union, overload
 from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
@@ -667,7 +667,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         rpath: str,
         lpath: Optional[str],
         callback: Callback = DEFAULT_CALLBACK,
-        outfile: Optional[BufferedWriter] = None,
+        outfile: Optional[BinaryIO] = None,
         **kwargs,
     ):
         remote = ObjectStorage.parse(rpath)
