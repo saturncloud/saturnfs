@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-from io import BufferedReader, BufferedWriter
+from io import BufferedReader, BufferedWriter, BytesIO
 from math import ceil
 from queue import Empty, Full, PriorityQueue, Queue
 from threading import Event, Thread
@@ -228,7 +228,12 @@ class FileTransferClient:
             end = start + chunk_size
             headers = byte_range_header(start, end)
 
-            yield DownloadPart(part_number=part_number, size=chunk_size, url=presigned_download.url, headers=headers)
+            yield DownloadPart(
+                part_number=part_number,
+                size=chunk_size,
+                url=presigned_download.url,
+                headers=headers,
+            )
 
     def _parallel_upload(
         self,
@@ -274,10 +279,12 @@ class ParallelDownloader:
         self,
         file_tranfer: FileTransferClient,
         num_workers: int,
+        disk_buffer: bool = True,
         exit_on_timeout: bool = True,
     ) -> None:
         self.file_transfer = file_tranfer
         self.num_workers = num_workers
+        self.disk_buffer = disk_buffer
         self.exit_on_timeout = exit_on_timeout
         self.download_queue: Queue[DownloadPart] = Queue(2 * num_workers)
         self.completed_queue: PriorityQueue[Union[DownloadChunk, DownloadStop]] = PriorityQueue()
@@ -286,8 +293,12 @@ class ParallelDownloader:
         for _ in range(num_workers):
             Thread(target=self._worker, daemon=True).start()
 
-    def download_chunks(self, f: BufferedWriter, parts: Iterable[DownloadPart], callback: Optional[Callback] = None):
-        collector_thread = Thread(target=self._collector, kwargs={"f": f, "callback": callback}, daemon=True)
+    def download_chunks(
+        self, f: BufferedWriter, parts: Iterable[DownloadPart], callback: Optional[Callback] = None
+    ):
+        collector_thread = Thread(
+            target=self._collector, kwargs={"f": f, "callback": callback}, daemon=True
+        )
         collector_thread.start()
 
         all_parts_read: bool = False
@@ -367,21 +378,27 @@ class ParallelDownloader:
                         pass
                     break
 
-                temp_file = tempfile.TemporaryFile(mode="w+b")
+                if self.disk_buffer:
+                    buffer = tempfile.TemporaryFile(mode="w+b")
+                else:
+                    buffer = BytesIO()
+
                 try:
-                    self.file_transfer._download_to_writer(part.url, temp_file, headers=part.headers, session=session)
+                    self.file_transfer._download_to_writer(
+                        part.url, buffer, headers=part.headers, session=session
+                    )
                 except ExpiredSignature:
                     # Signal that an error has occurred
                     self.stop.set()
                     self.download_queue.task_done()
-                    temp_file.close()
+                    buffer.close()
                     if self.exit_on_timeout:
                         return
                     else:
                         continue
 
-                temp_file.seek(0)
-                self.completed_queue.put(DownloadChunk(part.part_number, part.size, temp_file))
+                buffer.seek(0)
+                self.completed_queue.put(DownloadChunk(part.part_number, part.size, buffer))
                 self.download_queue.task_done()
 
     def _collector(

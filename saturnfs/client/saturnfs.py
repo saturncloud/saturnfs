@@ -1077,7 +1077,7 @@ class SaturnFile(AbstractBufferedFile):
     def _fetch_range_parallel(self, start: int, end: int, retries: int = 5) -> bytes:
         if self._parallel_downloader is None:
             self._parallel_downloader = ParallelDownloader(
-                self.fs.file_transfer, self.max_workers, exit_on_timeout=False
+                self.fs.file_transfer, self.max_workers, disk_buffer=False, exit_on_timeout=False
             )
 
         buffer = BytesIO()
@@ -1089,7 +1089,10 @@ class SaturnFile(AbstractBufferedFile):
             num_bytes = total_num_bytes - bytes_written
             offset = start + bytes_written
             parts_iterator = self._iter_download_parts(
-                presigned_download.url, offset, num_bytes, self._parallel_downloader.num_workers,
+                presigned_download.url,
+                offset,
+                num_bytes,
+                self._parallel_downloader.num_workers,
             )
             self._parallel_downloader.download_chunks(buffer, parts_iterator)
             bytes_written = buffer.tell()
