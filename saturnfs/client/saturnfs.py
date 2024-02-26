@@ -582,7 +582,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 raise SaturnError("File is smaller than the given size")
             callback.set_size(size)
 
-        if block_size is None and size > 10 * settings.S3_MIN_PART_SIZE:
+        if block_size is not None and block_size > size:
+            block_size = size
+        elif block_size is None and size > 10 * settings.S3_MIN_PART_SIZE:
             if size / settings.S3_MAX_NUM_PARTS > settings.S3_MIN_PART_SIZE:
                 block_size = settings.S3_MAX_PART_SIZE
             else:
