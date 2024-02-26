@@ -151,8 +151,9 @@ class FileTransferClient:
         finally:
             if local_path:
                 outfile.close()
-                set_last_modified(local_path, presigned_download.updated_at)
 
+        if local_path:
+            set_last_modified(local_path, presigned_download.updated_at)
         return bytes_written
 
     def _download_to_writer(
