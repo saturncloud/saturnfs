@@ -198,7 +198,7 @@ class FileTransferClient:
         downloader = ParallelDownloader(self, num_workers)
 
         try:
-            chunk_iterator = self._download_producer(
+            chunk_iterator = self._iter_download_parts(
                 presigned_download, block_size, offset, num_chunks, last_chunk_size
             )
             downloader.download_chunks(outfile, chunk_iterator, callback=callback)
@@ -206,7 +206,7 @@ class FileTransferClient:
         finally:
             downloader.close()
 
-    def _download_producer(
+    def _iter_download_parts(
         self,
         presigned_download: ObjectStoragePresignedDownload,
         block_size: int,
@@ -246,12 +246,12 @@ class FileTransferClient:
         num_workers = min(len(presigned_upload.parts), max_workers)
         uploader = ParallelUploader(self, num_workers)
         try:
-            chunk_iterator = self._upload_producer(presigned_upload, local_path, file_offset)
+            chunk_iterator = self._iter_upload_parts(presigned_upload, local_path, file_offset)
             return uploader.upload_chunks(chunk_iterator, callback=callback)
         finally:
             uploader.close()
 
-    def _upload_producer(
+    def _iter_upload_parts(
         self,
         presigned_upload: ObjectStoragePresignedUpload,
         local_path: str,

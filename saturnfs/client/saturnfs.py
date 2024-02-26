@@ -1059,11 +1059,11 @@ class SaturnFile(AbstractBufferedFile):
         if end > presigned_download.size:
             end = presigned_download.size
 
+        retries: int = 5
         if self.max_workers > 1 and end - start >= settings.S3_MIN_PART_SIZE:
-            return self._fetch_range_parallel(start, end)
+            return self._fetch_range_parallel(start, end, retries=retries)
 
         presigned_download = self.presigned_download or self._presign_download()
-        retries: int = 5
         while retries > 0:
             headers = byte_range_header(start, end)
             try:
