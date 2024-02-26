@@ -1,7 +1,8 @@
 from enum import Enum
+from typing import Dict, Optional
+
 from requests import Session
 from requests.adapters import HTTPAdapter, Retry
-from typing import Dict, Optional
 
 
 class Units(int, Enum):

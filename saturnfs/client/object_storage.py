@@ -1,7 +1,5 @@
 from typing import Collection, Iterable, List, Optional
 
-from requests import Session
-from requests.adapters import HTTPAdapter, Retry
 from saturnfs import settings
 from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
@@ -50,7 +48,7 @@ class ObjectStorageClient:
             retries=retries,
             backoff_factor=backoff_factor,
             status_forcelist=retry_statuses,
-            headers={"Authorization": f"token {settings.SATURN_TOKEN}"}
+            headers={"Authorization": f"token {settings.SATURN_TOKEN}"},
         )
 
     def start_upload(
