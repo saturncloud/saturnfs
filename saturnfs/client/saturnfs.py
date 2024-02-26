@@ -29,7 +29,7 @@ from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.download import ObjectStoragePresignedDownload
 from saturnfs.schemas.list import ObjectStorageInfo
-from saturnfs.schemas.reference import BulkObjectStorage
+from saturnfs.schemas.reference import BulkObjectStorage, full_path
 from saturnfs.schemas.upload import (
     ObjectStorageCompletePart,
     ObjectStoragePresignedPart,
@@ -772,7 +772,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 )
                 self.object_storage_client.delete_bulk(bulk)
                 for path in bulk.file_paths:
-                    self.invalidate_cache(path)
+                    self.invalidate_cache(full_path(owner_name, path))
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
     def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
