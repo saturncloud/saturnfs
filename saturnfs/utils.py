@@ -1,5 +1,8 @@
 from enum import Enum
-from typing import Dict
+from typing import Dict, Optional
+
+from requests import Session
+from requests.adapters import HTTPAdapter, Retry
 
 
 class Units(int, Enum):
@@ -24,3 +27,17 @@ def byte_range_header(start: int, end: int) -> Dict[str, str]:
     HTTP byte range header with non-inclusive end
     """
     return {"Range": f"bytes={start}-{end - 1}"}
+
+
+def requests_session(
+    retries: int = 10,
+    backoff_factor: float = 0.1,
+    headers: Optional[Dict[str, str]] = None,
+    **kwargs,
+) -> Session:
+    retry = Retry(total=retries, backoff_factor=backoff_factor, **kwargs)
+    session = Session()
+    session.mount("http", HTTPAdapter(max_retries=retry))
+    if headers:
+        session.headers.update(headers)
+    return session

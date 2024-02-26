@@ -13,7 +13,6 @@ from threading import Event, Thread
 from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple, Union
 
 from fsspec import Callback
-from requests import Session
 from saturnfs import settings
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
@@ -23,7 +22,7 @@ from saturnfs.schemas import (
     ObjectStoragePresignedUpload,
 )
 from saturnfs.schemas.upload import ObjectStoragePresignedPart
-from saturnfs.utils import byte_range_header
+from saturnfs.utils import byte_range_header, requests_session
 
 
 class FileTransferClient:
@@ -368,7 +367,7 @@ class ParallelDownloader:
         Pull chunks from the download queue, and write the associated byte range to a temp file.
         Push completed chunk onto the completed queue to be reconstructed.
         """
-        with Session() as session:
+        with requests_session() as session:
             while True:
                 part = self.download_queue.get()
                 if part is None:
@@ -380,24 +379,23 @@ class ParallelDownloader:
                         pass
                     break
 
-                if self.disk_buffer:
-                    buffer = tempfile.TemporaryFile(mode="w+b")
-                else:
-                    buffer = BytesIO()
-
                 try:
+                    if self.disk_buffer:
+                        buffer = tempfile.TemporaryFile(mode="w+b")
+                    else:
+                        buffer = BytesIO()
+
                     self.file_transfer._download_to_writer(
                         part.url, buffer, headers=part.headers, session=session
                     )
-                except ExpiredSignature:
+                except Exception as e:
                     # Signal that an error has occurred
                     self.stop.set()
                     self.download_queue.task_done()
                     buffer.close()
-                    if self.exit_on_timeout:
-                        return
-                    else:
+                    if isinstance(e, ExpiredSignature) and not self.exit_on_timeout:
                         continue
+                    return
 
                 buffer.seek(0)
                 self.completed_queue.put(DownloadChunk(part.part_number, part.size, buffer))
@@ -500,7 +498,7 @@ class ParallelUploader:
                     return False
 
     def _worker(self):
-        with Session() as session:
+        with requests_session() as session:
             while True:
                 chunk = self.upload_queue.get()
                 if chunk is None:
@@ -516,15 +514,13 @@ class ParallelUploader:
                     completed_part = self.file_transfer.upload_part(
                         chunk.data, chunk.part, session=session
                     )
-                except ExpiredSignature:
+                except Exception as e:
                     # Signal that an error has occurred
                     self.stop.set()
                     self.upload_queue.task_done()
-                    if self.exit_on_timeout:
-                        return
-                    else:
+                    if isinstance(e, ExpiredSignature) and not self.exit_on_timeout:
                         continue
-
+                    return
                 self.upload_queue.task_done()
                 self.completed_queue.put(completed_part)
 
