@@ -13,7 +13,6 @@ from threading import Event, Thread
 from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple, Union
 
 from fsspec import Callback
-from requests import Session
 from saturnfs import settings
 from saturnfs.client.aws import AWSPresignedClient
 from saturnfs.errors import ExpiredSignature
@@ -23,7 +22,7 @@ from saturnfs.schemas import (
     ObjectStoragePresignedUpload,
 )
 from saturnfs.schemas.upload import ObjectStoragePresignedPart
-from saturnfs.utils import byte_range_header
+from saturnfs.utils import byte_range_header, requests_session
 
 
 class FileTransferClient:
@@ -368,7 +367,7 @@ class ParallelDownloader:
         Pull chunks from the download queue, and write the associated byte range to a temp file.
         Push completed chunk onto the completed queue to be reconstructed.
         """
-        with Session() as session:
+        with requests_session() as session:
             while True:
                 part = self.download_queue.get()
                 if part is None:
@@ -500,7 +499,7 @@ class ParallelUploader:
                     return False
 
     def _worker(self):
-        with Session() as session:
+        with requests_session() as session:
             while True:
                 chunk = self.upload_queue.get()
                 if chunk is None:

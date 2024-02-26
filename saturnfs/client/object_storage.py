@@ -32,6 +32,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadList,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
+from saturnfs.utils import requests_session
 
 
 class ObjectStorageClient:
@@ -45,10 +46,12 @@ class ObjectStorageClient:
         backoff_factor: float = 0.1,
         retry_statuses: Collection[int] = frozenset([409, 423]),
     ):
-        retry = Retry(retries, backoff_factor=backoff_factor, status_forcelist=retry_statuses)
-        self.session = Session()
-        self.session.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
-        self.session.mount("http", HTTPAdapter(max_retries=retry))
+        self.session = requests_session(
+            retries=retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=retry_statuses,
+            headers={"Authorization": f"token {settings.SATURN_TOKEN}"}
+        )
 
     def start_upload(
         self,

@@ -3,6 +3,7 @@ from xml.etree import ElementTree
 
 from requests import Response, Session
 from saturnfs.errors import ExpiredSignature, SaturnError
+from saturnfs.utils import requests_session
 
 
 class AWSPresignedClient:
@@ -12,7 +13,7 @@ class AWSPresignedClient:
     """
 
     def __init__(self) -> None:
-        self.session = Session()
+        self.session = requests_session()
 
     def get(
         self,
