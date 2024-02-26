@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import os
 import weakref
+from copy import copy
 from datetime import datetime
 from glob import has_magic
 from io import BytesIO, TextIOWrapper
@@ -11,7 +12,8 @@ from urllib.parse import urlparse
 
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
-from fsspec.generic import rsync
+from fsspec.core import split_protocol
+from fsspec.generic import GenericFileSystem, rsync
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
 from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
@@ -29,7 +31,7 @@ from saturnfs.errors import ExpiredSignature, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.download import ObjectStoragePresignedDownload
 from saturnfs.schemas.list import ObjectStorageInfo
-from saturnfs.schemas.reference import BulkObjectStorage
+from saturnfs.schemas.reference import BulkObjectStorage, full_path
 from saturnfs.schemas.upload import (
     ObjectStorageCompletePart,
     ObjectStoragePresignedPart,
@@ -220,7 +222,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 results = self._lsshared(path)
             else:
                 results = self._lsorg()
-            self.dircache[path] = results
+            self.dircache[path] = [copy(f) for f in results]
 
         if detail:
             return results
@@ -229,19 +231,15 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
     def _ls_from_cache(self, path: str) -> Optional[List[ObjectStorageInfo]]:
         path = self._strip_protocol(path)
         if path in self.dircache:
-            return self.dircache[path]
+            return [copy(f) for f in self.dircache[path]]
 
         parent = self._parent(path)
         parent_files: List[ObjectStorageInfo] = self.dircache.get(parent, None)
         if parent_files is not None:
             files = []
             for f in parent_files:
-                name = f.name
-                if name.startswith(self.protocol):
-                    # Fsspec rsync adds protocol back onto name
-                    name = self._strip_protocol(name)
-                if name == path or (f.is_dir and name.rstrip("/") == path):
-                    files.append(f)
+                if f.name == path or (f.is_dir and f.name.rstrip("/") == path):
+                    files.append(copy(f))
 
             if len(files) == 0:
                 # parent dir was listed but did not contain this file
@@ -582,7 +580,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 raise SaturnError("File is smaller than the given size")
             callback.set_size(size)
 
-        if block_size is None and size > 10 * settings.S3_MIN_PART_SIZE:
+        if block_size is not None and block_size > size:
+            block_size = size
+        elif block_size is None and size > 10 * settings.S3_MIN_PART_SIZE:
             if size / settings.S3_MAX_NUM_PARTS > settings.S3_MIN_PART_SIZE:
                 block_size = settings.S3_MAX_PART_SIZE
             else:
@@ -772,13 +772,11 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                 )
                 self.object_storage_client.delete_bulk(bulk)
                 for path in bulk.file_paths:
-                    self.invalidate_cache(path)
+                    self.invalidate_cache(full_path(owner_name, path))
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
     def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
-        if source.startswith(settings.SATURNFS_FILE_PREFIX):
-            # Increase default blocksize for rsync to take advantage of parallel download
-            kwargs.setdefault("blocksize", 5 * settings.S3_MIN_PART_SIZE)
+        kwargs["fs"] = SaturnGenericFilesystem(sfs=self)
         return rsync(source, destination, delete_missing=delete_missing, **kwargs)
 
     def list_uploads(
@@ -1222,6 +1220,55 @@ class SaturnFile(AbstractBufferedFile):
         if presigned_upload is None:
             raise SaturnError("Failed to retrieve presigned upload")
         self.presigned_upload_parts.extend(presigned_upload.parts)
+
+
+class SaturnGenericFilesystem(GenericFileSystem):
+    """
+    Wraps fsspec GenericFilesystem to make full use of parallel download/upload
+    """
+
+    def __init__(
+        self,
+        default_method="current",
+        sfs: Optional[SaturnFS] = None,
+        **kwargs,
+    ):
+        self.sfs = sfs or SaturnFS()
+        super().__init__(default_method, **kwargs)
+
+    async def _cp_file(
+        self,
+        url: Any,
+        url2: Any,
+        blocksize: int = settings.S3_MIN_PART_SIZE,
+        callback: Callback = DEFAULT_CALLBACK,
+        **kwargs,
+    ):
+        # If src or dst is local, then we can handle the file more efficiently
+        # by put/get instead of opening as a buffered file
+        proto1, path1 = split_protocol(url)
+        proto2, path2 = split_protocol(url2)
+        if self._is_local(proto1) and self._is_saturnfs(proto2):
+            if blocksize < settings.S3_MIN_PART_SIZE:
+                blocksize = settings.S3_MIN_PART_SIZE
+            return self.sfs.put_file(
+                path1, path2, callback=callback, block_size=blocksize, **kwargs
+            )
+        elif self._is_saturnfs(proto1) and self._is_local(proto2):
+            return self.sfs.get_file(
+                path1, path2, callback=callback, block_size=blocksize, **kwargs
+            )
+
+        return await super()._cp_file(url, url2, blocksize, callback, **kwargs)
+
+    def _is_local(self, protocol: str) -> bool:
+        if isinstance(LocalFileSystem.protocol, tuple):
+            # Latest fsspec accepts tuple of protos
+            return protocol in LocalFileSystem.protocol
+        return protocol == LocalFileSystem.protocol
+
+    def _is_saturnfs(self, protocol: str) -> bool:
+        return protocol == SaturnFS.protocol
 
 
 register_implementation(SaturnFS.protocol, SaturnFS)
