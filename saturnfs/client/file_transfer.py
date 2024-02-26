@@ -379,12 +379,12 @@ class ParallelDownloader:
                         pass
                     break
 
-                if self.disk_buffer:
-                    buffer = tempfile.TemporaryFile(mode="w+b")
-                else:
-                    buffer = BytesIO()
-
                 try:
+                    if self.disk_buffer:
+                        buffer = tempfile.TemporaryFile(mode="w+b")
+                    else:
+                        buffer = BytesIO()
+
                     self.file_transfer._download_to_writer(
                         part.url, buffer, headers=part.headers, session=session
                     )
