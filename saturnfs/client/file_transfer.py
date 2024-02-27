@@ -580,7 +580,6 @@ class ParallelUploader:
             completed_part = self.completed_queue.get()
             if isinstance(completed_part, UploadStop):
                 # End of upload detected
-                # Producer only puts None on the queue when all workers are done
                 uploads_finished = not completed_part.error
                 self.completed_queue.task_done()
                 break
