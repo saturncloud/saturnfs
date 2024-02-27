@@ -452,7 +452,7 @@ class ParallelUploader:
         self.num_workers = num_workers
         self.exit_on_timeout = exit_on_timeout
         self.upload_queue: Queue[Optional[UploadChunk]] = Queue(2 * self.num_workers)
-        self.completed_queue: Queue[Optional[ObjectStorageCompletePart]] = Queue()
+        self.completed_queue: Queue[Union[ObjectStorageCompletePart, UploadStop]] = Queue()
         self.stop = Event()
 
         for _ in range(self.num_workers):
@@ -461,31 +461,41 @@ class ParallelUploader:
     def upload_chunks(
         self, chunks: Iterable[UploadChunk], callback: Optional[Callback] = None
     ) -> Tuple[List[ObjectStorageCompletePart], bool]:
-        num_parts: int = 0
-        first_part: int = -1
-        all_chunks_read: bool = False
-        for chunk in chunks:
-            if first_part == -1:
-                first_part = chunk.part.part_number
-            if not self._put_chunk(chunk):
-                break
-            num_parts += 1
-        else:
-            all_chunks_read = True
-
-        if first_part == -1:
+        first_part_number = self._producer(chunks)
+        if first_part_number == -1:
             # No chunks given
             return [], True
 
-        self._wait()
-        completed_parts, uploads_finished = self._collect(first_part, num_parts, callback=callback)
+        completed_parts, uploads_finished = self._collect(first_part_number, callback=callback)
         self.stop.clear()
-        return completed_parts, uploads_finished and all_chunks_read
+        return completed_parts, uploads_finished
 
     def close(self):
         # Signal shutdown to upload workers
         for _ in range(self.num_workers):
             self.upload_queue.put(None)
+
+    def _producer(self, chunks: Iterable[UploadChunk]) -> int:
+        first_chunk = next(iter(chunks), None)
+        if first_chunk is None:
+            return -1
+        self.upload_queue.put(first_chunk)
+
+        def _producer_thread():
+            all_chunks_read: bool = False
+            for chunk in chunks:
+                if not self._put_chunk(chunk):
+                    break
+            else:
+                all_chunks_read = True
+
+            uploads_finished = self._wait()
+
+            # Signal end of upload to the collector
+            self.completed_queue.put(UploadStop(error=not (uploads_finished and all_chunks_read)))
+
+        Thread(target=_producer_thread, daemon=True).start()
+        return first_chunk.part.part_number
 
     def _put_chunk(self, chunk: UploadChunk, poll_interval: int = 5) -> bool:
         while True:
@@ -524,7 +534,7 @@ class ParallelUploader:
                 self.upload_queue.task_done()
                 self.completed_queue.put(completed_part)
 
-    def _wait(self):
+    def _wait(self) -> bool:
         # Wait for workers to finish processing all chunks, or exit due to expired signatures
         uploads_finished = False
 
@@ -552,14 +562,11 @@ class ParallelUploader:
             # Join the thread instead of queue to ensure there is no race-condition when
             # worker threads are signaled to shutdown (otherwise uploads_finished_thread could leak)
             uploads_finished_thread.join()
-
-            # Signal error to the collector
-            self.completed_queue.put(None)
+        return uploads_finished
 
     def _collect(
         self,
         first_part: int,
-        num_parts: int,
         callback: Optional[Callback] = None,
     ):
         # Collect completed parts
@@ -567,9 +574,10 @@ class ParallelUploader:
         uploads_finished: bool = False
         while True:
             completed_part = self.completed_queue.get()
-            if completed_part is None:
-                # Error detected in one or more workers
+            if isinstance(completed_part, UploadStop):
+                # End of upload detected
                 # Producer only puts None on the queue when all workers are done
+                uploads_finished = not completed_part.error
                 self.completed_queue.task_done()
                 break
 
@@ -578,10 +586,6 @@ class ParallelUploader:
 
             if callback is not None:
                 callback.relative_update(completed_part.size)
-
-            if len(completed_parts) == num_parts:
-                uploads_finished = True
-                break
 
         completed_parts.sort(key=lambda p: p.part_number)
         completed_len = len(completed_parts)
@@ -661,6 +665,15 @@ class UploadChunk:
 
     part: ObjectStoragePresignedPart
     data: Any
+
+
+@dataclass
+class UploadStop:
+    """
+    Sentinel type to mark end of upload
+    """
+
+    error: bool = False
 
 
 def set_last_modified(local_path: str, last_modified: datetime):
