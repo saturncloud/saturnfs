@@ -486,7 +486,7 @@ class ParallelUploader:
         Thread(target=self._producer, kwargs={"chunks": chunks}, daemon=True).start()
         return first_chunk.part.part_number
 
-    def _producer(self, chunks: Iterable[UploadChunk]) -> int:
+    def _producer(self, chunks: Iterable[UploadChunk]):
         # Iterate chunks onto the upload_queue until completed or error detected
         all_chunks_read: bool = False
         for chunk in chunks:
