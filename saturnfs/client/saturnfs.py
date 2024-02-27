@@ -1257,13 +1257,9 @@ class SaturnGenericFilesystem(GenericFileSystem):
         if self._is_local(proto1) and self._is_saturnfs(proto2):
             if blocksize < settings.S3_MIN_PART_SIZE:
                 blocksize = settings.S3_MIN_PART_SIZE
-            return self.sfs.put_file(
-                path1, path2, block_size=blocksize, **kwargs
-            )
+            return self.sfs.put_file(path1, path2, block_size=blocksize, **kwargs)
         elif self._is_saturnfs(proto1) and self._is_local(proto2):
-            return self.sfs.get_file(
-                path1, path2, block_size=blocksize, **kwargs
-            )
+            return self.sfs.get_file(path1, path2, block_size=blocksize, **kwargs)
 
         return await super()._cp_file(url, url2, blocksize, **kwargs)
 
