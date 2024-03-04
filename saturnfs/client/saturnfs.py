@@ -1233,10 +1233,12 @@ class SaturnGenericFilesystem(GenericFileSystem):
     def __init__(
         self,
         default_method="current",
-        max_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        max_workers_per_file: int = 1,
         **kwargs,
     ):
-        self._thread_pool = ThreadPoolExecutor(max_workers, thread_name_prefix="sfs-generic")
+        self._thread_pool = ThreadPoolExecutor(max_batch_workers, thread_name_prefix="sfs-generic")
+        self._max_workers_per_file = max_workers_per_file
         super().__init__(default_method, **kwargs)
 
     async def _cp_file(
@@ -1262,13 +1264,27 @@ class SaturnGenericFilesystem(GenericFileSystem):
             sfs = SaturnFS()
             return await self.loop.run_in_executor(
                 self._thread_pool,
-                partial(sfs.put_file, path1, path2, block_size=blocksize, max_workers=1, **kwargs),
+                partial(
+                    sfs.put_file,
+                    path1,
+                    path2,
+                    block_size=blocksize,
+                    max_workers=self._max_workers_per_file,
+                    **kwargs,
+                ),
             )
         elif self._is_saturnfs(proto1) and self._is_local(proto2):
             sfs = SaturnFS()
             return await self.loop.run_in_executor(
                 self._thread_pool,
-                partial(sfs.get_file, path1, path2, block_size=blocksize, max_workers=1, **kwargs),
+                partial(
+                    sfs.get_file,
+                    path1,
+                    path2,
+                    block_size=blocksize,
+                    max_workers=self._max_workers_per_file,
+                    **kwargs,
+                ),
             )
 
         return await super()._cp_file(url, url2, blocksize, **kwargs)
