@@ -30,7 +30,7 @@ from saturnfs.client.file_transfer import (
     UploadChunk,
 )
 from saturnfs.client.object_storage import ObjectStorageClient
-from saturnfs.errors import ExpiredSignature, SaturnError
+from saturnfs.errors import ExpiredSignature, PathErrors, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.download import ObjectStoragePresignedDownload
 from saturnfs.schemas.list import ObjectStorageInfo
@@ -761,7 +761,13 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         callback.set_size(len(paths))
         owner_paths: Dict[str, List[str]] = {}
         for path in paths:
-            remote = ObjectStorage.parse(path)
+            try:
+                remote = ObjectStorage.parse(path)
+            except SaturnError as e:
+                if e.message == PathErrors.INVALID_REMOTE_FILE and self._is_owner_root(path):
+                    # Recursive delete on owner root path includes the root dir, ignore error
+                    continue
+                raise e
             owner_paths.setdefault(remote.owner_name, [])
             owner_paths[remote.owner_name].append(remote.file_path)
 
@@ -847,6 +853,10 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         if info is not None:
             if info.size != size or info.updated_at != updated_at:
                 self.invalidate_cache(path)
+
+    def _is_owner_root(self, path: str) -> bool:
+        path = self._strip_protocol(path).strip("/")
+        return len(path.split("/")) == 2
 
 
 class SaturnFile(AbstractBufferedFile):
