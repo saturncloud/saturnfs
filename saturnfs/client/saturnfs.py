@@ -789,11 +789,14 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
         max_file_workers: int = 1,
         **kwargs,
-    ):
+    ) -> None:
         kwargs["fs"] = SaturnGenericFilesystem(
             max_batch_workers=max_batch_workers, max_file_workers=max_file_workers
         )
-        return rsync(source, destination, delete_missing=delete_missing, **kwargs)
+        rsync(source, destination, delete_missing=delete_missing, **kwargs)
+        if destination.startswith(settings.SATURNFS_FILE_PREFIX):
+            self.invalidate_cache(destination)
+        return None
 
     def list_uploads(
         self, path: str, is_copy: Optional[bool] = None
