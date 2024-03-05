@@ -195,7 +195,7 @@ def delete(path: str, recursive: bool):
     "--max-file-workers",
     type=int,
     default=1,
-    help="Maximum number of threads to run per file for parallel chunk upload/download"
+    help="Maximum number of threads to run per file for parallel chunk upload/download",
 )
 def rsync(
     source_path: str,
