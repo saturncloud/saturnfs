@@ -60,6 +60,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
     protocol = "sfs"
 
     def __init__(self, *args, **storage_options):
+        if self._cached:
+            # reusing instance, don't change
+            return
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
         weakref.finalize(self, self.close)
@@ -1280,7 +1283,8 @@ class SaturnGenericFilesystem(GenericFileSystem):
         if self._is_local(proto1) and self._is_saturnfs(proto2):
             if blocksize < settings.S3_MIN_PART_SIZE:
                 blocksize = settings.S3_MIN_PART_SIZE
-            sfs = SaturnFS()
+            # Ensure fresh instance for dedicated client sessions per thread
+            sfs = SaturnFS(skip_instance_cache=True)
             return await self.loop.run_in_executor(
                 self._thread_pool,
                 partial(
@@ -1293,7 +1297,8 @@ class SaturnGenericFilesystem(GenericFileSystem):
                 ),
             )
         elif self._is_saturnfs(proto1) and self._is_local(proto2):
-            sfs = SaturnFS()
+            # Ensure fresh instance for dedicated client sessions per thread
+            sfs = SaturnFS(skip_instance_cache=True)
             return await self.loop.run_in_executor(
                 self._thread_pool,
                 partial(
