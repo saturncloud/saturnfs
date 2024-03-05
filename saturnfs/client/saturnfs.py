@@ -781,8 +781,18 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                     self.invalidate_cache(full_path(owner_name, path))
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
-    def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
-        kwargs["fs"] = SaturnGenericFilesystem()
+    def rsync(
+        self,
+        source: str,
+        destination: str,
+        delete_missing: bool = False,
+        max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        max_file_workers: int = 1,
+        **kwargs,
+    ):
+        kwargs["fs"] = SaturnGenericFilesystem(
+            max_batch_workers=max_batch_workers, max_file_workers=max_file_workers
+        )
         return rsync(source, destination, delete_missing=delete_missing, **kwargs)
 
     def list_uploads(
