@@ -3,8 +3,10 @@ from __future__ import annotations
 import math
 import os
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from datetime import datetime
+from functools import partial
 from glob import has_magic
 from io import BytesIO, TextIOWrapper
 from typing import Any, BinaryIO, Dict, Iterable, List, Optional, Tuple, Union, overload
@@ -58,6 +60,9 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
     protocol = "sfs"
 
     def __init__(self, *args, **storage_options):
+        if self._cached:
+            # reusing instance, don't change
+            return
         self.object_storage_client = ObjectStorageClient()
         self.file_transfer = FileTransferClient()
         weakref.finalize(self, self.close)
@@ -776,9 +781,22 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                     self.invalidate_cache(full_path(owner_name, path))
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
-    def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
-        kwargs["fs"] = SaturnGenericFilesystem(sfs=self)
-        return rsync(source, destination, delete_missing=delete_missing, **kwargs)
+    def rsync(
+        self,
+        source: str,
+        destination: str,
+        delete_missing: bool = False,
+        max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        max_file_workers: int = 1,
+        **kwargs,
+    ) -> None:
+        kwargs["fs"] = SaturnGenericFilesystem(
+            max_batch_workers=max_batch_workers, max_file_workers=max_file_workers
+        )
+        rsync(source, destination, delete_missing=delete_missing, **kwargs)
+        if destination.startswith(settings.SATURNFS_FILE_PREFIX):
+            self.invalidate_cache(destination)
+        return None
 
     def list_uploads(
         self, path: str, is_copy: Optional[bool] = None
@@ -1231,10 +1249,31 @@ class SaturnGenericFilesystem(GenericFileSystem):
     def __init__(
         self,
         default_method="current",
-        sfs: Optional[SaturnFS] = None,
+        max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        max_file_workers: int = 1,
         **kwargs,
     ):
-        self.sfs = sfs or SaturnFS()
+        """
+        Parameters
+        ----------
+        default_method: str (optional)
+            Defines how to configure backend FS instances. Options are:
+            - "default": instantiate like FSClass(), with no
+              extra arguments; this is the default instance of that FS, and can be
+              configured via the config system
+            - "generic": takes instances from the `_generic_fs` dict in this module,
+              which you must populate before use. Keys are by protocol
+            - "current": takes the most recently instantiated version of each FS
+        max_batch_workers: int (optional)
+            Defines the max size of the thread pool used to copy files asynchronously
+        max_file_workers: int (optional)
+            Defines the maximum number of threads used for an individual file copy to transfer
+            multiple chunks in parallel. Files smaller than 5MiB will always run on a single thread.
+
+            The total maximum number of threads used will be max_batch_workers * max_file_workers
+        """
+        self._thread_pool = ThreadPoolExecutor(max_batch_workers, thread_name_prefix="sfs-generic")
+        self._max_file_workers = max_file_workers
         super().__init__(default_method, **kwargs)
 
     async def _cp_file(
@@ -1257,9 +1296,33 @@ class SaturnGenericFilesystem(GenericFileSystem):
         if self._is_local(proto1) and self._is_saturnfs(proto2):
             if blocksize < settings.S3_MIN_PART_SIZE:
                 blocksize = settings.S3_MIN_PART_SIZE
-            return self.sfs.put_file(path1, path2, block_size=blocksize, **kwargs)
+            # Ensure fresh instance for dedicated client sessions per thread
+            sfs = SaturnFS(skip_instance_cache=True)
+            return await self.loop.run_in_executor(
+                self._thread_pool,
+                partial(
+                    sfs.put_file,
+                    path1,
+                    path2,
+                    block_size=blocksize,
+                    max_workers=self._max_file_workers,
+                    **kwargs,
+                ),
+            )
         elif self._is_saturnfs(proto1) and self._is_local(proto2):
-            return self.sfs.get_file(path1, path2, block_size=blocksize, **kwargs)
+            # Ensure fresh instance for dedicated client sessions per thread
+            sfs = SaturnFS(skip_instance_cache=True)
+            return await self.loop.run_in_executor(
+                self._thread_pool,
+                partial(
+                    sfs.get_file,
+                    path1,
+                    path2,
+                    block_size=blocksize,
+                    max_workers=self._max_file_workers,
+                    **kwargs,
+                ),
+            )
 
         return await super()._cp_file(url, url2, blocksize, **kwargs)
 

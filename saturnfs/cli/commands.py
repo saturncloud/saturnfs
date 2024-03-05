@@ -185,7 +185,25 @@ def delete(path: str, recursive: bool):
     default=False,
     help="Delete paths from the destination that are missing in the source",
 )
-def rsync(source_path: str, destination_path: str, delete_missing: bool, quiet: bool):
+@click.option(
+    "--max-batch-workers",
+    type=int,
+    default=settings.SATURNFS_DEFAULT_MAX_WORKERS,
+    help="Maximum number of threads to run for batched file uploads",
+)
+@click.option(
+    "--max-file-workers",
+    type=int,
+    default=1,
+    help="Maximum number of threads to run per file for parallel chunk upload/download",
+)
+def rsync(
+    source_path: str,
+    destination_path: str,
+    delete_missing: bool,
+    quiet: bool,
+    **kwargs,
+):
     """
     Recursively sync files between two directory trees
     """
@@ -202,7 +220,9 @@ def rsync(source_path: str, destination_path: str, delete_missing: bool, quiet: 
         operation = file_op(src_is_local, dst_is_local)
         callback = FileOpCallback(operation=operation)
 
-    sfs.rsync(source_path, destination_path, delete_missing=delete_missing, callback=callback)
+    sfs.rsync(
+        source_path, destination_path, delete_missing=delete_missing, callback=callback, **kwargs
+    )
 
 
 @cli.command("ls")
