@@ -1234,11 +1234,30 @@ class SaturnGenericFilesystem(GenericFileSystem):
         self,
         default_method="current",
         max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
-        max_workers_per_file: int = 1,
+        max_file_workers: int = 1,
         **kwargs,
     ):
+        """
+        Parameters
+        ----------
+        default_method: str (optional)
+            Defines how to configure backend FS instances. Options are:
+            - "default": instantiate like FSClass(), with no
+              extra arguments; this is the default instance of that FS, and can be
+              configured via the config system
+            - "generic": takes instances from the `_generic_fs` dict in this module,
+              which you must populate before use. Keys are by protocol
+            - "current": takes the most recently instantiated version of each FS
+        max_batch_workers: int (optional)
+            Defines the max size of the thread pool used to copy files asynchronously
+        max_file_workers: int (optional)
+            Defines the maximum number of threads used for an individual file copy to transfer
+            multiple chunks in parallel. Files smaller than 5MiB will always run on a single thread.
+
+            The total maximum number of threads used will be max_batch_workers * max_file_workers
+        """
         self._thread_pool = ThreadPoolExecutor(max_batch_workers, thread_name_prefix="sfs-generic")
-        self._max_workers_per_file = max_workers_per_file
+        self._max_file_workers = max_file_workers
         super().__init__(default_method, **kwargs)
 
     async def _cp_file(
@@ -1269,7 +1288,7 @@ class SaturnGenericFilesystem(GenericFileSystem):
                     path1,
                     path2,
                     block_size=blocksize,
-                    max_workers=self._max_workers_per_file,
+                    max_workers=self._max_file_workers,
                     **kwargs,
                 ),
             )
@@ -1282,7 +1301,7 @@ class SaturnGenericFilesystem(GenericFileSystem):
                     path1,
                     path2,
                     block_size=blocksize,
-                    max_workers=self._max_workers_per_file,
+                    max_workers=self._max_file_workers,
                     **kwargs,
                 ),
             )
