@@ -1419,7 +1419,9 @@ def _rsync(
     source = fs._strip_protocol(source)
     destination = fs._strip_protocol(destination)
     allfiles = fs.find(source, withdirs=True, detail=True)
-    allfiles = {a: v for a, v in allfiles.items() if not check_exclude_globs(v["name"], exclude_globs)}
+    allfiles = {
+        a: v for a, v in allfiles.items() if not check_exclude_globs(v["name"], exclude_globs)
+    }
     if not fs.isdir(source):
         raise ValueError("Can only rsync on a directory")
     otherfiles = fs.find(destination, withdirs=True, detail=True)
