@@ -32,7 +32,7 @@ from saturnfs.client.file_transfer import (
     UploadChunk,
 )
 from saturnfs.client.object_storage import ObjectStorageClient
-from saturnfs.errors import ExpiredSignature, SaturnError
+from saturnfs.errors import ExpiredSignature, PathErrors, SaturnError
 from saturnfs.schemas import ObjectStorage, ObjectStoragePrefix
 from saturnfs.schemas.download import ObjectStoragePresignedDownload
 from saturnfs.schemas.list import ObjectStorageInfo
@@ -766,7 +766,13 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         callback.set_size(len(paths))
         owner_paths: Dict[str, List[str]] = {}
         for path in paths:
-            remote = ObjectStorage.parse(path)
+            try:
+                remote = ObjectStorage.parse(path)
+            except SaturnError as e:
+                if e.message == PathErrors.INVALID_REMOTE_FILE and self._is_owner_root(path):
+                    # Recursive delete on owner root path includes the root dir, ignore error
+                    continue
+                raise e
             owner_paths.setdefault(remote.owner_name, [])
             owner_paths[remote.owner_name].append(remote.file_path)
 
@@ -786,10 +792,22 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
                     self.invalidate_cache(full_path(owner_name, path))
                 i += settings.OBJECT_STORAGE_MAX_LIST_COUNT
 
-
-    def rsync(self, source: str, destination: str, delete_missing: bool = False, **kwargs):
-        kwargs["fs"] = SaturnGenericFilesystem()
-        return _rsync(source, destination, delete_missing=delete_missing, **kwargs)
+    def rsync(
+        self,
+        source: str,
+        destination: str,
+        delete_missing: bool = False,
+        max_batch_workers: int = settings.SATURNFS_DEFAULT_MAX_WORKERS,
+        max_file_workers: int = 1,
+        **kwargs,
+    ) -> None:
+        kwargs["fs"] = SaturnGenericFilesystem(
+            max_batch_workers=max_batch_workers, max_file_workers=max_file_workers
+        )
+        _rsync(source, destination, delete_missing=delete_missing, **kwargs)
+        if destination.startswith(settings.SATURNFS_FILE_PREFIX):
+            self.invalidate_cache(destination)
+        return None
 
     def list_uploads(
         self, path: str, is_copy: Optional[bool] = None
@@ -840,6 +858,10 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         if info is not None:
             if info.size != size or info.updated_at != updated_at:
                 self.invalidate_cache(path)
+
+    def _is_owner_root(self, path: str) -> bool:
+        path = self._strip_protocol(path).strip("/")
+        return len(path.split("/")) == 2
 
 
 class SaturnFile(AbstractBufferedFile):
