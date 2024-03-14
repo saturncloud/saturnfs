@@ -197,6 +197,7 @@ def delete(path: str, recursive: bool):
     default=1,
     help="Maximum number of threads to run per file for parallel chunk upload/download",
 )
+@click.option("--exclude", "exclude_globs", multiple=True)
 def rsync(
     source_path: str,
     destination_path: str,
@@ -219,7 +220,6 @@ def rsync(
     else:
         operation = file_op(src_is_local, dst_is_local)
         callback = FileOpCallback(operation=operation)
-
     sfs.rsync(
         source_path, destination_path, delete_missing=delete_missing, callback=callback, **kwargs
     )
