@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
 from fsspec.core import split_protocol
-from fsspec.generic import GenericFileSystem, rsync
+from fsspec.generic import GenericFileSystem
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
 from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached

@@ -59,3 +59,5 @@ disable=
     useless-return,
     wrong-import-order,
     wrong-import-position,
+    consider-using-min-builtin,
+    consider-using-max-builtin,
