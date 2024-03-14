@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 import math
 import os
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from datetime import datetime
+from fnmatch import fnmatch
 from functools import partial
 from glob import has_magic
 from io import BytesIO, TextIOWrapper
@@ -15,7 +17,7 @@ from urllib.parse import urlparse
 from fsspec.caching import BaseCache
 from fsspec.callbacks import Callback, NoOpCallback
 from fsspec.core import split_protocol
-from fsspec.generic import GenericFileSystem, rsync
+from fsspec.generic import GenericFileSystem
 from fsspec.implementations.local import LocalFileSystem, make_path_posix
 from fsspec.registry import register_implementation
 from fsspec.spec import AbstractBufferedFile, AbstractFileSystem, _Cached
@@ -46,6 +48,9 @@ from saturnfs.utils import byte_range_header
 from typing_extensions import Literal
 
 DEFAULT_CALLBACK = NoOpCallback()
+
+
+logger = logging.getLogger(__name__)
 
 
 class _CachedTyped(_Cached):
@@ -799,7 +804,7 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
         kwargs["fs"] = SaturnGenericFilesystem(
             max_batch_workers=max_batch_workers, max_file_workers=max_file_workers
         )
-        rsync(source, destination, delete_missing=delete_missing, **kwargs)
+        _rsync(source, destination, delete_missing=delete_missing, **kwargs)
         if destination.startswith(settings.SATURNFS_FILE_PREFIX):
             self.invalidate_cache(destination)
         return None
@@ -1347,3 +1352,117 @@ class SaturnGenericFilesystem(GenericFileSystem):
 
 
 register_implementation(SaturnFS.protocol, SaturnFS)
+
+
+def check_exclude_globs(input_string, exclude_globs) -> bool:
+    """
+    returns True if input_string matches a list of globs that we want to exclude
+    """
+    for glob in exclude_globs:
+        if fnmatch(input_string, glob):
+            return True
+    return False
+
+
+def _rsync(
+    source,
+    destination,
+    delete_missing=False,
+    source_field="size",
+    dest_field="size",
+    update_cond="different",
+    inst_kwargs=None,
+    fs=None,
+    exclude_globs=None,
+    **kwargs,
+):
+    """Sync files between two directory trees
+
+    (experimental)
+
+    Parameters
+    ----------
+    source: str
+        Root of the directory tree to take files from. This must be a directory, but
+        do not include any terminating "/" character
+    destination: str
+        Root path to copy into. The contents of this location should be
+        identical to the contents of ``source`` when done. This will be made a
+        directory, and the terminal "/" should not be included.
+    delete_missing: bool
+        If there are paths in the destination that don't exist in the
+        source and this is True, delete them. Otherwise, leave them alone.
+    source_field: str | callable
+        If ``update_field`` is "different", this is the key in the info
+        of source files to consider for difference. Maybe a function of the
+        info dict.
+    dest_field: str | callable
+        If ``update_field`` is "different", this is the key in the info
+        of destination files to consider for difference. May be a function of
+        the info dict.
+    update_cond: "different"|"always"|"never"
+        If "always", every file is copied, regardless of whether it exists in
+        the destination. If "never", files that exist in the destination are
+        not copied again. If "different" (default), only copy if the info
+        fields given by ``source_field`` and ``dest_field`` (usually "size")
+        are different. Other comparisons may be added in the future.
+    inst_kwargs: dict|None
+        If ``fs`` is None, use this set of keyword arguments to make a
+        GenericFileSystem instance
+    fs: GenericFileSystem|None
+        Instance to use if explicitly given. The instance defines how to
+        to make downstream file system instances from paths.
+    """
+    if exclude_globs is None:
+        exclude_globs = []
+    fs = fs or GenericFileSystem(**(inst_kwargs or {}))
+    source = fs._strip_protocol(source)
+    destination = fs._strip_protocol(destination)
+    allfiles = fs.find(source, withdirs=True, detail=True)
+    allfiles = {
+        a: v for a, v in allfiles.items() if not check_exclude_globs(v["name"], exclude_globs)
+    }
+    if not fs.isdir(source):
+        raise ValueError("Can only rsync on a directory")
+    otherfiles = fs.find(destination, withdirs=True, detail=True)
+    dirs = [
+        a
+        for a, v in allfiles.items()
+        if v["type"] == "directory" and a.replace(source, destination) not in otherfiles
+    ]
+    logger.debug(f"{len(dirs)} directories to create")
+    for dirn in dirs:
+        # no async
+        fs.mkdirs(dirn.replace(source, destination), exist_ok=True)
+    allfiles = {a: v for a, v in allfiles.items() if v["type"] == "file"}
+    logger.debug(f"{len(allfiles)} files to consider for copy")
+    to_delete = [
+        o
+        for o, v in otherfiles.items()
+        if o.replace(destination, source) not in allfiles and v["type"] == "file"
+    ]
+    for k, v in allfiles.copy().items():
+        otherfile = k.replace(source, destination)
+        if otherfile in otherfiles:
+            if update_cond == "always":
+                allfiles[k] = otherfile
+            elif update_cond == "different":
+                inf1 = source_field(v) if callable(source_field) else v[source_field]
+                v2 = otherfiles[otherfile]
+                inf2 = dest_field(v2) if callable(dest_field) else v2[dest_field]
+                if inf1 != inf2:
+                    # details mismatch, make copy
+                    allfiles[k] = otherfile
+                else:
+                    # details match, don't copy
+                    allfiles.pop(k)
+        else:
+            # file not in target yet
+            allfiles[k] = otherfile
+    logger.debug(f"{len(allfiles)} files to copy")
+    if allfiles:
+        source_files, target_files = zip(*allfiles.items())
+        fs.cp(source_files, target_files, **kwargs)
+    logger.debug(f"{len(to_delete)} files to delete")
+    if delete_missing:
+        fs.rm(to_delete)
