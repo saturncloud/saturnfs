@@ -7,7 +7,7 @@ install_requires = [
     "requests",
     "marshmallow>=3.10.0,<4.0.0",
     "marshmallow-dataclass",
-    "fsspec,
+    "fsspec",
 ]
 
 
