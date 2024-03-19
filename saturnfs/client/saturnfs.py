@@ -110,7 +110,6 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
 
         fs = LocalFileSystem()
         lpaths = fs.expand_path(lpath, recursive=recursive)
-        is_dir = isinstance(rpath, str) and self.isdir(rpath)
 
         # Overriding the default implementation to set exists=False
         # Without this, there's no way to format a recursive put
@@ -119,7 +118,6 @@ class SaturnFS(AbstractFileSystem, metaclass=_CachedTyped):  # pylint: disable=i
             lpaths,
             rpath,
             exists=False,
-            is_dir=is_dir,
         )
 
         callback.set_size(len(rpaths))
