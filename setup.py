@@ -18,7 +18,6 @@ setup(
     name="saturnfs",
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass()
-    version="0.0.1",
     maintainer="Saturn Cloud Developers",
     maintainer_email="dev@saturncloud.io",
     license="BSD-3-Clause",
