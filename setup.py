@@ -1,9 +1,7 @@
 import os
 
-from setuptools import find_packages, setup
-
 import versioneer
-
+from setuptools import find_packages, setup
 
 install_requires = [
     "click",
@@ -17,7 +15,7 @@ install_requires = [
 setup(
     name="saturnfs",
     version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass()
+    cmdclass=versioneer.get_cmdclass(),
     maintainer="Saturn Cloud Developers",
     maintainer_email="dev@saturncloud.io",
     license="BSD-3-Clause",
