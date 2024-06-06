@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 import requests
@@ -11,14 +12,10 @@ class SaturnSession(requests.Session):
     Session wrapper to manage refreshing tokens for the Saturn API
     when they expire and retrying the request.
     """
-    def __init__(self, headers: Optional[Dict[str, str]] = None, **kwargs) -> None:
+    def __init__(self, **kwargs) -> None:
         super().__init__()
-
-        if headers is None:
-            headers = {}
-        if "Authorization" not in headers:
-            headers["Authoirzation"] = f"token {settings.SATURN_TOKEN}"
-        requests_session(self, headers=headers, **kwargs)
+        requests_session(self, **kwargs)
+        self._set_auth_header()
 
         if "response" in self.hooks:
             response_hooks = self.hooks["response"]
@@ -28,11 +25,13 @@ class SaturnSession(requests.Session):
 
         response_hooks.append(self._handle_response)
 
+        self._lock = Lock()
+
     def _handle_response(
         self, response: requests.Response, *args, **kwargs
     ) -> Optional[requests.Response]:
         if not response.ok:
-            if self._should_refresh(response) and self._refresh():
+            if self._refresh(response):
                 response.request.headers.update(self.headers)
                 response.request.headers["X-Saturn-Retry"] = "true"
                 return self.send(response.request)
@@ -52,16 +51,33 @@ class SaturnSession(requests.Session):
                 return False
         return False
 
-    def _refresh(self) -> bool:
-        if settings.SATURN_REFRESH_TOKEN:
-            url = urljoin(settings.SATURN_BASE_URL, "api/auth/token")
-            data = {"grant_type": "refresh_token", "refresh_token": settings.SATURN_REFRESH_TOKEN}
-            # Intentionally not using the current session here
-            response = requests.post(url, json=data, hooks={})
-            if response.ok:
-                token_data: Dict[str, Any] = response.json()
-                settings.SATURN_TOKEN = token_data["access_token"]
-                settings.SATURN_REFRESH_TOKEN = token_data.get("refresh_token")
-                self.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
-                return True
+    def _refresh(self, response: Optional[requests.Response] = None) -> bool:
+        if response and not self._should_refresh(response):
+            return False
+
+        with self._lock:
+            if response:
+                prev_token = self._prev_token(response)
+                if prev_token and settings.SATURN_TOKEN != prev_token:
+                    # Token was probably refreshed in another thread. Don't refresh again.
+                    self._set_auth_header()
+                    return True
+
+            if settings.SATURN_REFRESH_TOKEN:
+                url = urljoin(settings.SATURN_BASE_URL, "api/auth/token")
+                data = {"grant_type": "refresh_token", "refresh_token": settings.SATURN_REFRESH_TOKEN}
+                # Intentionally not using the current session here
+                response = requests.post(url, json=data, hooks={})
+                if response.ok:
+                    token_data: Dict[str, Any] = response.json()
+                    settings.SATURN_TOKEN = token_data["access_token"]
+                    settings.SATURN_REFRESH_TOKEN = token_data.get("refresh_token")
+                    self._set_auth_header()
+                    return True
         return False
+
+    def _prev_token(response: requests.Response) -> str:
+        return response.request.headers.get("Authorization", "").split(" ", 1)[-1]
+
+    def _set_auth_header(self):
+        self.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
