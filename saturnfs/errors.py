@@ -1,8 +1,20 @@
+from json import JSONDecodeError
+from requests import Response
+
+
 class SaturnError(Exception):
     def __init__(self, message: str, status: int = 400) -> None:
         self.message = message
         self.status = status
         super().__init__(message)
+
+    @classmethod
+    def from_response(cls, response: Response):
+        try:
+            error = response.json()
+        except JSONDecodeError:
+            error = response.reason
+        return cls(error, response.status_code)
 
 
 class ExpiredSignature(SaturnError):
