@@ -1,6 +1,5 @@
 from typing import Collection, Iterable, List, Optional
 
-from saturnfs import settings
 from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
 from saturnfs.api.list import ListAPI, OrgListAPI, SharedAPI

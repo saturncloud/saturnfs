@@ -1,5 +1,5 @@
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Dict, MutableMapping, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -30,11 +30,11 @@ class SaturnSession(requests.Session):
         self._lock = Lock()
 
     def _handle_response(
-        self, response: requests.Response, *args, **kwargs
+        self, response: requests.Response, *args, **kwargs  # pylint: disable=unused-argument
     ) -> Optional[requests.Response]:
         if not response.ok:
             if self._refresh(response):
-                response.request.headers.update(self.headers)
+                self._set_auth_header(response.request.headers)
                 response.request.headers["X-Saturn-Retry"] = "true"
                 return self.send(response.request)
             raise SaturnError.from_response(response)
@@ -43,7 +43,8 @@ class SaturnSession(requests.Session):
     def _should_refresh(self, response: requests.Response) -> bool:
         if response.request.headers.get("X-Saturn-Retry"):
             return False
-        if not response.request.url.startswith(settings.SATURN_BASE_URL):
+        url = response.request.url
+        if not url or not url.startswith(settings.SATURN_BASE_URL):
             return False
 
         if response.status_code == 401:
@@ -81,8 +82,10 @@ class SaturnSession(requests.Session):
                     return True
         return False
 
-    def _prev_token(response: requests.Response) -> str:
+    def _prev_token(self, response: requests.Response) -> str:
         return response.request.headers.get("Authorization", "").split(" ", 1)[-1]
 
-    def _set_auth_header(self):
-        self.headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
+    def _set_auth_header(self, headers: Optional[MutableMapping] = None):
+        if headers is None:
+            headers = self.headers
+        headers["Authorization"] = f"token {settings.SATURN_TOKEN}"
