@@ -1,17 +1,19 @@
 from threading import Lock
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
-import requests
 
+import requests
 from saturnfs import settings
 from saturnfs.errors import SaturnError
 from saturnfs.utils import requests_session
+
 
 class SaturnSession(requests.Session):
     """
     Session wrapper to manage refreshing tokens for the Saturn API
     when they expire and retrying the request.
     """
+
     def __init__(self, **kwargs) -> None:
         super().__init__()
         requests_session(self, **kwargs)
@@ -65,7 +67,10 @@ class SaturnSession(requests.Session):
 
             if settings.SATURN_REFRESH_TOKEN:
                 url = urljoin(settings.SATURN_BASE_URL, "api/auth/token")
-                data = {"grant_type": "refresh_token", "refresh_token": settings.SATURN_REFRESH_TOKEN}
+                data = {
+                    "grant_type": "refresh_token",
+                    "refresh_token": settings.SATURN_REFRESH_TOKEN,
+                }
                 # Intentionally not using the current session here
                 response = requests.post(url, json=data, hooks={})
                 if response.ok:

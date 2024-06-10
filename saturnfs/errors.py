@@ -1,4 +1,5 @@
 from json import JSONDecodeError
+
 from requests import Response
 
 
