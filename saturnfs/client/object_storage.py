@@ -1,6 +1,5 @@
 from typing import Collection, Iterable, List, Optional
 
-from saturnfs import settings
 from saturnfs.api.delete import BulkDeleteAPI, DeleteAPI
 from saturnfs.api.download import BulkDownloadAPI, DownloadAPI
 from saturnfs.api.list import ListAPI, OrgListAPI, SharedAPI
@@ -30,7 +29,7 @@ from saturnfs.schemas.upload import (
     ObjectStorageUploadList,
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
-from saturnfs.utils import requests_session
+from saturnfs.session import SaturnSession
 
 
 class ObjectStorageClient:
@@ -44,11 +43,10 @@ class ObjectStorageClient:
         backoff_factor: float = 0.1,
         retry_statuses: Collection[int] = frozenset([409, 423]),
     ):
-        self.session = requests_session(
+        self.session = SaturnSession(
             retries=retries,
             backoff_factor=backoff_factor,
             status_forcelist=retry_statuses,
-            headers={"Authorization": f"token {settings.SATURN_TOKEN}"},
         )
 
     def start_upload(
