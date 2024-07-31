@@ -37,7 +37,8 @@ def requests_session(
 ) -> Session:
     retry = Retry(total=retries, backoff_factor=backoff_factor, **kwargs)
     session = Session()
-    session.mount("http", HTTPAdapter(max_retries=retry))
+    session.mount("http://", HTTPAdapter(max_retries=retry))
+    session.mount("https://", HTTPAdapter(max_retries=retry))
     if headers:
         session.headers.update(headers)
     return session
