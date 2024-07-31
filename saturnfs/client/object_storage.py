@@ -31,6 +31,7 @@ from saturnfs.schemas.upload import (
 )
 from saturnfs.schemas.usage import ObjectStorageUsageResults
 from saturnfs.utils import requests_session
+from urllib3 import Retry
 
 
 class ObjectStorageClient:
@@ -48,6 +49,7 @@ class ObjectStorageClient:
             retries=retries,
             backoff_factor=backoff_factor,
             status_forcelist=retry_statuses,
+            allowed_methods=["POST", *Retry.DEFAULT_ALLOWED_METHODS],
             headers={"Authorization": f"token {settings.SATURN_TOKEN}"},
         )
 

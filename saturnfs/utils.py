@@ -31,13 +31,15 @@ def byte_range_header(start: int, end: int) -> Dict[str, str]:
 
 def requests_session(
     retries: int = 10,
+    connect: int = 5,
     backoff_factor: float = 0.1,
     headers: Optional[Dict[str, str]] = None,
     **kwargs,
 ) -> Session:
-    retry = Retry(total=retries, backoff_factor=backoff_factor, **kwargs)
+    retry = Retry(total=retries, connect=connect, backoff_factor=backoff_factor, **kwargs)
     session = Session()
-    session.mount("http", HTTPAdapter(max_retries=retry))
+    session.mount("http://", HTTPAdapter(max_retries=retry))
+    session.mount("https://", HTTPAdapter(max_retries=retry))
     if headers:
         session.headers.update(headers)
     return session
